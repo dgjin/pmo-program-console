@@ -153,6 +153,7 @@ async function main() {
   const navCount = await ev(`document.querySelectorAll('#rail-nav .nav-item').length`);
   if (navCount < 16) throw new Error(`导航项数量不对：${navCount}`);
   if (!(await ev(`Boolean(document.querySelector('#rail-toggle'))`))) throw new Error('没有侧栏收起按钮');
+  if ((await ev(`getComputedStyle(document.querySelector('.mark')).transform`)) !== 'none') throw new Error('侧栏 Logo 仍是 3D 透视');
   await ev(`document.querySelector('#rail-toggle').click()`);
   await wait(400);
   if (!(await ev(`document.body.classList.contains('is-rail-collapsed')`))) throw new Error('侧栏没有收起');
@@ -225,6 +226,8 @@ async function main() {
   await send('Page.navigate', { url: `${BASE}/?smoke=9#/ai` });
   await wait(1200);
   if (!(await ev(`Boolean(document.querySelector('#global-ai-thread'))`))) throw new Error('全局 AI 页没有渲染');
+  if ((await ev(`Math.round(document.querySelector('#global-ai-thread').getBoundingClientRect().width)`)) < 900) throw new Error('AI 助手对话框没有放大');
+  if ((await ev(`getComputedStyle(document.querySelector('#global-ai-thread')).borderRadius`)) === '0px') throw new Error('AI 助手对话框没有圆角');
   await ev(`document.querySelector('[data-action="global-ai-run"][data-mode="portfolio"]')?.click()`);
   await wait(900);
   if ((await ev(`document.querySelectorAll('.chat-msg').length`)) < 2) throw new Error('全局 AI 没有返回结果');

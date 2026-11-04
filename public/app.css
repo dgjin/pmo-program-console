@@ -156,61 +156,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
   position: relative;
   width: 34px;
   height: 34px;
-  border: 1px solid rgba(242, 238, 227, .38);
+  border: 1px solid rgba(242, 238, 227, .55);
   display: grid;
   place-items: center;
   flex: none;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, .14), transparent 38%),
-    linear-gradient(145deg, #2c2a21 0%, #191811 52%, #0d0c08 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .22),
-    inset 0 -2px 3px rgba(0, 0, 0, .7),
-    inset 1px 0 0 rgba(255, 255, 255, .05),
-    0 1px 0 #070604,
-    0 3px 0 #0c0b07,
-    0 5px 10px rgba(0, 0, 0, .38);
-  transform: perspective(180px) rotateX(5deg) rotateY(-7deg);
-  transform-style: preserve-3d;
+  background: #14130e;
 }
 
 .mark-letter {
-  position: relative;
-  z-index: 1;
   font-family: var(--serif);
   font-size: 20px;
   line-height: 1;
   color: #f7f2e7;
-  text-shadow:
-    0 1px 0 rgba(255, 255, 255, .32),
-    0 2px 1px rgba(0, 0, 0, .55),
-    0 3px 4px rgba(0, 0, 0, .35);
-  transform: translateY(-1px) translateZ(7px);
-}
-
-.mark::after {
-  content: "";
-  position: absolute;
-  inset: 2px 2px auto auto;
-  width: 10px;
-  height: 10px;
-  background: linear-gradient(225deg, rgba(255, 255, 255, .12), transparent 70%);
-  pointer-events: none;
-  transform: translateZ(2px);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .mark { transition: transform .25s var(--ease), box-shadow .25s var(--ease); }
-  .rail-head:hover .mark {
-    transform: perspective(180px) rotateX(2deg) rotateY(-12deg) translateY(-1px);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, .26),
-      inset 0 -2px 3px rgba(0, 0, 0, .7),
-      inset 1px 0 0 rgba(255, 255, 255, .06),
-      0 1px 0 #070604,
-      0 4px 0 #0c0b07,
-      0 7px 14px rgba(0, 0, 0, .42);
-  }
 }
 
 .mark-lines {
@@ -219,10 +176,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   bottom: -4px;
   width: 12px;
   height: 12px;
-  background: #12110c;
-  border-left: 1px solid #12110c;
-  border-top: 1px solid #12110c;
-  transform: translateZ(2px);
+  background: #1b1a14;
 }
 .mark-lines::before,
 .mark-lines::after {
@@ -3895,10 +3849,10 @@ body.is-rail-collapsed .rail-program-switch { display: none; }
 
 /* ---------------------------------------------------------- global AI --- */
 
-.global-ai-page { max-width: 980px; }
+.global-ai-page { max-width: 1180px; }
 .global-ai-scope { display: flex; justify-content: space-between; align-items: center; gap: 20px; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--rule); padding: 10px 0; margin-bottom: 16px; }
 .global-ai-scope label { font-family: var(--mono); font-size: 8px; letter-spacing: .08em; color: var(--ink-4); display: flex; align-items: center; gap: 9px; }
-.global-ai-scope select { border: 1px solid var(--rule); background: var(--surface); color: var(--ink); padding: 6px 8px; font-family: var(--sans); font-size: 11px; min-width: 260px; }
+.global-ai-scope select { border: 1px solid var(--rule); border-radius: 999px; background: var(--surface); color: var(--ink); padding: 8px 13px; font-family: var(--sans); font-size: 11px; min-width: 280px; }
 .global-ai-page .help-thread { min-height: 480px; height: min(62vh, 760px); max-height: 68vh; }
 @media (max-width: 900px) {
   .global-ai-scope { flex-direction: column; align-items: flex-start; }
