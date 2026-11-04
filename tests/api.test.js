@@ -1307,6 +1307,47 @@ test('项目知识库：自动索引、检索、笔记与 AI 引用', async () =
   assert.equal(removed.status, 200);
 });
 
+test('项目成员角色：甲方/乙方成员只读且按项目分配', async () => {
+  const admin = await login('pmo', 'pmo123456');
+  const created = [
+    { username: 'clientmember1', name: '甲方成员测试', role: 'client_member', password: 'member123' },
+    { username: 'vendormember1', name: '乙方成员测试', role: 'vendor_member', password: 'member123' },
+  ];
+  for (const u of created) {
+    const r = await req('POST', '/api/admin/users', {
+      cookie: admin.cookie,
+      body: { ...u, project_ids: [1] },
+    });
+    assert.equal(r.status, 201);
+  }
+
+  const client = await login('clientmember1', 'member123');
+  const vendor = await login('vendormember1', 'member123');
+  assert.equal(client.status, 200);
+  assert.equal(vendor.status, 200);
+  const clientMe = await req('GET', '/api/me', { cookie: client.cookie });
+  assert.equal(clientMe.json.user.roleLabel, '甲方项目成员');
+  const vendorMe = await req('GET', '/api/me', { cookie: vendor.cookie });
+  assert.equal(vendorMe.json.user.roleLabel, '乙方项目成员');
+
+  for (const user of [client, vendor]) {
+    const workspace = await req('GET', '/api/projects/1/workspace', { cookie: user.cookie });
+    assert.equal(workspace.status, 200);
+    const unassigned = await req('GET', '/api/projects/2/workspace', { cookie: user.cookie });
+    assert.equal(unassigned.status, 400);
+    const write = await req('POST', '/api/projects/1/kb/notes', {
+      cookie: user.cookie,
+      body: { title: '成员不该能写', content_md: '只读' },
+    });
+    assert.equal(write.status, 400);
+  }
+
+  const clientBrief = await req('GET', '/api/projects/1/ai/brief', { cookie: client.cookie });
+  assert.ok(clientBrief.json.items.every((x) => x.audience.includes('甲方') || x.audience.includes('双方')));
+  const vendorBrief = await req('GET', '/api/projects/1/ai/brief', { cookie: vendor.cookie });
+  assert.ok(vendorBrief.json.items.every((x) => x.audience.includes('项目经理') || x.audience.includes('双方')));
+});
+
 test('项目 AI 行动清单：按现状生成待办并支持行动建议', async () => {
   const admin = await login('pmo', 'pmo123456');
   const brief = await req('GET', '/api/projects/1/ai/brief', { cookie: admin.cookie });

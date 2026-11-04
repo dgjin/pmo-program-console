@@ -256,6 +256,8 @@ async function main() {
 
   await send('Page.navigate', { url: `${BASE}/?smoke=8#/admin` });
   await wait(1200);
+  if (!(await ev(`[...document.querySelectorAll('#user-role-filter option')].some(o => o.value === 'client_member')`))) throw new Error('用户角色筛选缺少甲方项目成员');
+  if (!(await ev(`[...document.querySelectorAll('#user-role-filter option')].some(o => o.value === 'vendor_member')`))) throw new Error('用户角色筛选缺少乙方项目成员');
   await ev(`document.querySelector('[data-action="admin-tab"][data-value="ai"]')?.click()`);
   await wait(600);
   if (!(await ev(`Boolean(document.querySelector('#ai-base'))`))) throw new Error('AI 配置页没有渲染');

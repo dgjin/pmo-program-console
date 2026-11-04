@@ -601,6 +601,8 @@ function dlvChip(item) {
 function roleText(role, party) {
   if (role === 'pmo') return 'PMO 管理员';
   if (role === 'approver') return '审批员';
+  if (role === 'client_member') return '甲方项目成员';
+  if (role === 'vendor_member') return '乙方项目成员';
   return party === '甲方' ? '甲方项目经理' : '乙方项目经理';
 }
 
@@ -4517,7 +4519,7 @@ async function viewAdmin() {
           <input id="user-search" type="search" placeholder="搜索姓名 / 账号 / 项目" value="${esc(f.q)}" />
         </label>
         <select class="admin-select" id="user-role-filter" data-user-filter="role" aria-label="按角色筛选">
-          ${[['全部', '全部角色'], ['pmo', 'PMO 管理员'], ['approver', '审批员'], ['pm', '项目经理']].map(([v, l]) => `<option value="${v}" ${f.role === v ? 'selected' : ''}>${l}</option>`).join('')}
+          ${[['全部', '全部角色'], ['pmo', 'PMO 管理员'], ['approver', '审批员'], ['pm', '项目经理'], ['client_member', '甲方项目成员'], ['vendor_member', '乙方项目成员']].map(([v, l]) => `<option value="${v}" ${f.role === v ? 'selected' : ''}>${l}</option>`).join('')}
         </select>
         <select class="admin-select" id="user-party-filter" data-user-filter="party" aria-label="按归属筛选">
           ${[['全部', '全部归属'], ['甲方', '甲方'], ['乙方', '乙方']].map(([v, l]) => `<option value="${v}" ${f.party === v ? 'selected' : ''}>${l}</option>`).join('')}
@@ -4866,6 +4868,8 @@ function openUserModal(user) {
             <div class="field"><label for="uf-role">角色</label>
               <select id="uf-role" name="role">
                 <option value="pm" ${user?.role === 'pm' ? 'selected' : ''}>项目经理</option>
+                <option value="client_member" ${user?.role === 'client_member' ? 'selected' : ''}>甲方项目成员</option>
+                <option value="vendor_member" ${user?.role === 'vendor_member' ? 'selected' : ''}>乙方项目成员</option>
                 <option value="pmo" ${user?.role === 'pmo' ? 'selected' : ''}>PMO 管理员</option>
                 <option value="approver" ${user?.role === 'approver' ? 'selected' : ''}>审批员</option>
               </select></div>
@@ -4891,7 +4895,7 @@ function openUserModal(user) {
               <div class="checkgrid">
                 ${all.map((p) => `<label class="checkitem"><input type="checkbox" name="project_ids" value="${p.id}" ${assigned.has(p.id) ? 'checked' : ''} /><span>${esc(p.code)} ${esc(p.name)}</span></label>`).join('')}
               </div>
-              <span class="help">PMO 账号默认拥有全部项目权限。周报 / 计划的维护权限由项目台账里的乙方项目经理决定，这里只控制可见范围。</span>
+              <span class="help">PMO 账号默认拥有全部项目权限。项目经理和项目成员都要勾选项目：项目经理按项目台账里的乙方/甲方经理身份维护或验收，项目成员只读。周报 / 计划的维护权限仍由项目台账里的乙方项目经理决定。</span>
             </div>
           </div>
         </div>
@@ -7395,6 +7399,14 @@ document.addEventListener('compositionend', (e) => {
 });
 
 document.addEventListener('change', async (e) => {
+  if (e.target.id === 'uf-role') {
+    const party = document.getElementById('uf-party');
+    if (party) {
+      if (e.target.value === 'client_member') party.value = '甲方';
+      if (e.target.value === 'vendor_member') party.value = '乙方';
+    }
+    return;
+  }
   if (e.target.id === 'meeting-room-filter') {
     state.meeting.roomId = e.target.value || 'all';
     await render();

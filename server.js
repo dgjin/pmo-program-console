@@ -911,7 +911,7 @@ const SESSION_COOKIE = 'pmo_sid';
 const SESSION_DAYS = 7;
 const REVIEW_SLA_HOURS = 48;
 const loginAttempts = new Map();
-const ROLE_LABEL = { pmo: 'PMO 管理员', pm: '项目经理', approver: '审批员' };
+const ROLE_LABEL = { pmo: 'PMO 管理员', pm: '项目经理', approver: '审批员', client_member: '甲方项目成员', vendor_member: '乙方项目成员' };
 
 const PM_USERNAMES = {
   张伟: 'zhangwei', 李娜: 'lina', 王强: 'wangqiang', 陈静: 'chenjing',
@@ -1054,7 +1054,16 @@ function roleName(u) {
   if (!u) return '';
   if (u.role === 'pmo') return 'PMO 管理员';
   if (u.role === 'approver') return '审批员';
+  if (u.role === 'client_member') return '甲方项目成员';
+  if (u.role === 'vendor_member') return '乙方项目成员';
   return u.party === '甲方' ? '甲方项目经理' : '乙方项目经理';
+}
+
+function normalizeParty(role, party) {
+  if (role === 'pmo' || role === 'approver') return 'PMO';
+  if (role === 'client_member') return '甲方';
+  if (role === 'vendor_member') return '乙方';
+  return party === '甲方' ? '甲方' : '乙方';
 }
 
 function publicUser(u) {
@@ -1671,8 +1680,9 @@ PMO 在「用品管理」里：
 - **PMO**：建项目群、建项目、指定双方项目经理、审核周报和关口、看项目群报表。
 - **乙方项目经理**：排计划、填周报、维护风险/行动项、提交关口和验收材料。
 - **甲方项目经理**：查看项目、留言、审核通过后的交付物验收和项目验收。
+- **甲方项目成员 / 乙方项目成员**：只读成员。只能查看被分配的项目、周报、计划、风险和项目知识库，不能改项目数据、不能审批、不能管理账号。
 
-账号和权限在「管理维护 → 用户与权限」维护。一个人只用自己的账号，不要共用。
+账号和权限在「管理维护 → 用户与权限」维护。一个人只用自己的账号，不要共用。项目成员在新建/编辑账号时勾选项目；不勾项目就看不到项目。
 
 ## 1. 建项目群
 
@@ -2404,7 +2414,7 @@ function projectActionItems(projectId, viewer = null) {
   const rank = { high: 0, medium: 1, low: 2 };
   items.sort((a, b) => rank[a.level] - rank[b.level] || String(a.due_date || '9999-12-31').localeCompare(String(b.due_date || '9999-12-31')));
   const isPmoViewer = viewer && viewer.role === 'pmo';
-  const isClientViewer = viewer && project.client_pm_id === viewer.id;
+  const isClientViewer = viewer && (viewer.party === '甲方' || project.client_pm_id === viewer.id);
   const visible = isPmoViewer ? items : items.filter((x) => isClientViewer
     ? x.audience.includes('甲方') || x.audience.includes('双方')
     : x.audience.includes('项目经理') || x.audience.includes('双方'));
@@ -6239,8 +6249,8 @@ async function handleApi(req, res, u) {
     const b = await readBody(req);
     const username = String(b.username || '').trim();
     const name = String(b.name || '').trim();
-    const role = ['pmo', 'pm', 'approver'].includes(b.role) ? b.role : 'pm';
-    const party = role === 'pmo' || role === 'approver' ? 'PMO' : (b.party === '甲方' ? '甲方' : '乙方');
+    const role = ['pmo', 'pm', 'approver', 'client_member', 'vendor_member'].includes(b.role) ? b.role : 'pm';
+    const party = normalizeParty(role, b.party);
     const password = String(b.password || '');
     if (!/^[a-z0-9_.-]{3,32}$/i.test(username)) throw fail('用户名需为 3–32 位字母、数字或 . _ -');
     if (!name) throw fail('请填写姓名');
@@ -6321,10 +6331,8 @@ async function handleApi(req, res, u) {
       if (!others) throw fail('至少需要保留一个 PMO 管理员');
     }
     const name = b.name != null ? String(b.name).trim() : cur.name;
-    const role = ['pmo', 'pm', 'approver'].includes(b.role) ? b.role : cur.role;
-    let party = b.party === '甲方' ? '甲方' : b.party === '乙方' ? '乙方' : cur.party;
-    if (role === 'pmo' || role === 'approver') party = 'PMO';
-    if (role === 'pm' && party === 'PMO') party = '乙方';
+    const role = ['pmo', 'pm', 'approver', 'client_member', 'vendor_member'].includes(b.role) ? b.role : cur.role;
+    let party = normalizeParty(role, b.party != null ? b.party : cur.party);
     const active = b.active === false ? 0 : b.active === true ? 1 : cur.active;
     let vendorId = party === '乙方' ? cur.vendor_id : null;
     if (party === '乙方' && 'vendor_id' in b) vendorId = b.vendor_id ? Number(b.vendor_id) : null;
