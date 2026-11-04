@@ -15,7 +15,7 @@ pmo-program-console-1.32.0/
 │   ├── index.html
 │   ├── app.css
 │   └── app.js
-├── tests/api.test.js      # 47 项接口集成测试
+├── tests/api.test.js      # 48 项接口集成测试
 ├── scripts/ui-smoke.mjs   # 浏览器冒烟（CDP，零依赖）
 ├── scripts/load-test.mjs  # 轻量并发压测
 ├── scripts/security-check.mjs # 安全基线检查

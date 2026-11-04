@@ -175,6 +175,15 @@ async function main() {
   if (!(await ev(`Boolean(document.querySelector('.pulse'))`))) throw new Error('项目收益与行动页没有渲染');
   await auditPage('项目收益页');
 
+  await send('Page.navigate', { url: `${BASE}/?smoke=5#/projects/1/ai` });
+  await wait(1500);
+  if ((await ev(`document.querySelectorAll('.ai-brief-item').length`)) < 1) throw new Error('项目 AI 当前要处理没有渲染');
+  if (!(await ev(`document.querySelector('.ai-brief-item')?.getAttribute('href') || ''`)).startsWith('#/projects/')) throw new Error('项目 AI 待办链接不对');
+  await auditPage('项目 AI 助手页');
+  await ev(`document.querySelector('[data-action="ai-run"][data-mode="actions"]')?.click()`);
+  await wait(900);
+  if (!/当前要处理|今天先处理/.test(await ev(`document.querySelector('#ai-result')?.innerText || ''`))) throw new Error('项目 AI 行动建议没有返回');
+
   await send('Page.navigate', { url: `${BASE}/?smoke=6#/projects/1/kb` });
   await wait(1200);
   if ((await ev(`document.querySelectorAll('.kb-entry').length`)) < 5) throw new Error('项目知识库没有渲染');

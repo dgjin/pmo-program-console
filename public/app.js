@@ -46,6 +46,7 @@ const state = {
   userFilters: { q: '', role: '全部', party: '全部', status: '全部' },
   loginBusy: false,
   ai: null,
+  projectAIBrief: null,
   help: { q: '', category: '全部', tab: 'kb', messages: [], draft: '' },
   projectKB: null,
   projectKBFilter: { q: '', kind: '' },
@@ -2566,6 +2567,7 @@ function openLessonModal(p) {
 
 async function viewProject(id) {
   const tab = state.params.tab || 'overview';
+  state.projectAIBrief = null;
   let ws;
   try {
     ws = await api(`/api/projects/${id}/workspace`);
@@ -2582,6 +2584,9 @@ async function viewProject(id) {
   if (tab === 'plan') {
     try { plan = await api(`/api/projects/${id}/plan`); } catch { plan = null; }
     state.projectPlan = plan;
+  }
+  if (tab === 'ai') {
+    try { state.projectAIBrief = await api(`/api/projects/${id}/ai/brief`); } catch { state.projectAIBrief = null; }
   }
   let kb = null;
   if (tab === 'kb') {
@@ -5358,16 +5363,57 @@ function projectAISourcesHTML(result) {
   return `<div class="ai-sources"><span>知识库引用</span>${result.sources.map((s) => `<span class="chip">${esc(s.kind_label)} · ${esc(s.title)}</span>`).join('')}</div>`;
 }
 
+function briefDueLabel(date) {
+  if (!date) return '无明确截止';
+  const base = state.data?.today || new Date().toISOString().slice(0, 10);
+  const n = Math.round((new Date(`${date}T00:00:00`) - new Date(`${base}T00:00:00`)) / 86400000);
+  if (Number.isNaN(n)) return date;
+  if (n < 0) return `逾期 ${Math.abs(n)} 天`;
+  if (n === 0) return '今天';
+  if (n <= 7) return `${n} 天后`;
+  return date.slice(5);
+}
+
+function projectAIBriefHTML(p, brief) {
+  if (!brief) return '';
+  const items = (brief.items || []).slice(0, 10);
+  const c = brief.counts || {};
+  return `<section class="panel ai-brief">
+    <div class="ai-brief-head">
+      <div>
+        <span class="eyebrow">PROJECT PULSE / ${esc(brief.date || '')}</span>
+        <h2>当前要处理 <span class="ai-brief-count">${c.high || 0} 项优先</span></h2>
+        <p>${esc(brief.summary || '')}</p>
+      </div>
+      <button class="btn btn--sm btn--solid" data-action="ai-run" data-mode="actions">生成行动建议</button>
+    </div>
+    ${items.length ? `<div class="ai-brief-list">
+      ${items.map((x) => `<a class="ai-brief-item ai-brief-item--${esc(x.level)}" href="#/projects/${p.id}/${esc(x.tab)}">
+        <span class="ai-brief-priority">${esc(x.priority)}</span>
+        <span class="ai-brief-body">
+          <span class="ai-brief-meta">${esc(x.category)} · ${esc((x.audience || []).join(' / '))} · ${esc(briefDueLabel(x.due_date))}</span>
+          <b>${esc(x.title)}</b>
+          <span class="ai-brief-detail">${esc(x.detail)}</span>
+          <span class="ai-brief-action">${esc(x.action || '打开处理')} →</span>
+        </span>
+      </a>`).join('')}
+    </div>` : '<div class="ai-brief-empty">当前没有明显待办。建议检查计划、周报和关口材料是否齐全。</div>'}
+    <p class="dlv-note">根据项目当前数据自动判断，按优先级排序；处理完刷新页面即可更新。AI 生成的是解释和建议，不替代 PMO 判断。</p>
+  </section>`;
+}
+
 function projectAIHTML(p, ws) {
   const ai = state.data?.ai || { enabled: false, model: '' };
   const result = state.ai && state.ai.projectId === p.id ? state.ai : null;
-  return `<div class="ai-layout">
+  return `${projectAIBriefHTML(p, state.projectAIBrief)}
+    <div class="ai-layout">
     <section class="panel">
       <div class="panel-head"><h2><span class="no">01</span>项目 AI 助手</h2><span class="hint">${ai.enabled ? esc(ai.model) : '本地规则模式'}</span></div>
       <div class="ai-banner ${ai.enabled ? '' : 'ai-banner--off'}">${ai.enabled
         ? '会读取当前项目的进度、风险、里程碑、关口、最新周报和计划摘要，并检索项目知识库。生成内容需要人工核对。'
         : '未配置大模型，先使用本地规则摘要。设置 PMO_LLM_BASE_URL / PMO_LLM_MODEL 后启用。'}</div>
       <div class="ai-actions">
+        <button class="btn btn--quiet btn--sm" data-action="ai-run" data-mode="actions">现在该做什么</button>
         <button class="btn btn--quiet btn--sm" data-action="ai-run" data-mode="summary">项目摘要</button>
         <button class="btn btn--quiet btn--sm" data-action="ai-run" data-mode="weekly">生成周报草稿</button>
         <button class="btn btn--quiet btn--sm" data-action="ai-run" data-mode="risks">风险建议</button>

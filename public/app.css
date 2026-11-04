@@ -3711,6 +3711,28 @@ body.is-rail-collapsed .rail-program-switch { display: none; }
 .help-answer { margin-top: 12px; min-height: 40px; max-height: 360px; }
 .help-sources { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
 
+/* 项目 AI：当前要处理 */
+.ai-brief { margin-bottom: 24px; border-left: 3px solid var(--oxblood); background: linear-gradient(180deg, var(--surface), var(--paper)); }
+.ai-brief-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; border-bottom: 1px solid var(--rule-soft); padding-bottom: 12px; margin-bottom: 12px; }
+.ai-brief-head h2 { margin: 4px 0 5px; font-size: 22px; font-weight: 500; letter-spacing: -.02em; }
+.ai-brief-head p { margin: 0; color: var(--ink-3); font-size: 11.5px; line-height: 1.7; }
+.ai-brief-count { font-family: var(--mono); font-size: 9px; letter-spacing: .04em; color: var(--oxblood); margin-left: 6px; }
+.ai-brief-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.ai-brief-item { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 9px; align-items: start; padding: 10px 12px; border: 1px solid var(--rule-soft); background: var(--paper); color: var(--ink); text-decoration: none; transition: border-color .15s ease, transform .15s ease; }
+.ai-brief-item:hover { border-color: var(--ink-3); transform: translateY(-1px); }
+.ai-brief-item--high { border-left: 2px solid var(--oxblood); }
+.ai-brief-item--medium { border-left: 2px solid var(--ochre); }
+.ai-brief-item--low { border-left: 2px solid var(--jade); }
+.ai-brief-priority { font-family: var(--mono); font-size: 8px; letter-spacing: .06em; color: var(--ink-4); padding-top: 2px; }
+.ai-brief-item--high .ai-brief-priority { color: var(--oxblood); }
+.ai-brief-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ai-brief-meta { font-family: var(--mono); font-size: 8px; color: var(--ink-4); }
+.ai-brief-body b { font-size: 12px; font-weight: 500; line-height: 1.45; }
+.ai-brief-detail { font-size: 10.5px; color: var(--ink-3); line-height: 1.6; }
+.ai-brief-action { font-family: var(--mono); font-size: 8.5px; color: var(--jade); margin-top: 2px; }
+.ai-brief-empty { padding: 18px 0; color: var(--ink-3); font-size: 12px; }
+.ai-brief .dlv-note { margin-top: 10px; }
+
 .ai-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 30px; align-items: start; }
 .ai-banner { border-left: 3px solid var(--jade); background: var(--surface); padding: 9px 12px; font-size: 11.5px; line-height: 1.7; margin-bottom: 14px; }
 .ai-banner--off { border-left-color: var(--ochre); }
@@ -4005,4 +4027,9 @@ body.is-rail-collapsed .rail-program-switch { display: none; }
 
 @media (max-width: 900px) {
   .global-ai-page .help-thread { height: auto; min-height: 320px; max-height: none; }
+}
+
+@media (max-width: 900px) {
+  .ai-brief-head { flex-direction: column; gap: 10px; }
+  .ai-brief-list { grid-template-columns: 1fr; }
 }

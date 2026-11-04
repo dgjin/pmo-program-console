@@ -1307,6 +1307,35 @@ test('项目知识库：自动索引、检索、笔记与 AI 引用', async () =
   assert.equal(removed.status, 200);
 });
 
+test('项目 AI 行动清单：按现状生成待办并支持行动建议', async () => {
+  const admin = await login('pmo', 'pmo123456');
+  const brief = await req('GET', '/api/projects/1/ai/brief', { cookie: admin.cookie });
+  assert.equal(brief.status, 200);
+  assert.ok(brief.json.items.length >= 1);
+  assert.ok(brief.json.counts.total >= 1);
+  assert.ok(brief.json.items.some((x) => ['P0', 'P1', 'P2'].includes(x.priority)));
+  assert.ok(brief.json.items.every((x) => x.tab && x.category && x.title));
+
+  const pm = await login('zhangwei', 'pm123456');
+  const pmBrief = await req('GET', '/api/projects/1/ai/brief', { cookie: pm.cookie });
+  assert.equal(pmBrief.status, 200);
+  assert.ok(pmBrief.json.items.every((x) => x.audience.includes('项目经理') || x.audience.includes('双方')));
+  const client = await login('hejing', 'pm123456');
+  const clientBrief = await req('GET', '/api/projects/1/ai/brief', { cookie: client.cookie });
+  assert.equal(clientBrief.status, 200);
+  assert.ok(clientBrief.json.items.every((x) => x.audience.includes('甲方') || x.audience.includes('双方')));
+
+  await new Promise((r) => setTimeout(r, 1600));
+  const action = await req('POST', '/api/projects/1/ai', {
+    cookie: admin.cookie,
+    body: { mode: 'actions' },
+  });
+  assert.equal(action.status, 200);
+  assert.equal(action.json.fallback, true);
+  assert.match(action.json.answer, /当前要处理/);
+  assert.match(action.json.answer, /今天先处理/);
+});
+
 test('帮助中心、知识库与项目 AI 降级', async () => {
   const admin = await login('pmo', 'pmo123456');
   const help = await req('GET', '/api/help', { cookie: admin.cookie });

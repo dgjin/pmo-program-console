@@ -1821,11 +1821,41 @@ PMO 在「用品管理」里：
 这些内容不需要手工同步，打开页面时按当前数据实时生成。项目 AI 助手会先检索知识库，把命中的条目带进上下文；回答下面会列出引用了哪些条目。
 
 手工笔记只有 PMO 和乙方项目经理能增删改，甲方只读。`],
+  ['project-ai-actions', '项目 AI 当前要处理怎么用', 'AI', '根据项目现状列出待办、关注事项和责任角色。', `# 项目 AI：当前要处理
+
+项目页 →「AI 助手」，最上面是「当前要处理」清单。它不是模型编的，是按项目当前数据算出来的，刷新页面就会更新。
+
+## 清单怎么来的
+
+- 周报：本周没提交、还是草稿、被退回、待 PMO 审核。
+- 章程：没建、草稿/退回、待审批。
+- 计划：没有任务、没有基线、关键任务逾期、进度偏差。
+- 关口：14 天内要评审、待评审但检查项没完成。
+- 风险：高风险、过了计划关闭日、缺责任人或应对。
+- 里程碑：逾期或 7 天内到期。
+- 变更：待审批。
+- 行动项：逾期。
+- 收益：接近复盘日但还没达到目标。
+- 收尾：项目接近结束但没有验收记录。
+
+每条有 P0/P1/P2、分类、责任角色、截止时间和下一步动作。点卡片会跳到对应页签处理。
+
+## 不同角色看到的不同
+
+- PMO：看到全部，包括待审周报、章程、变更和跨项目风险。
+- 乙方项目经理：看到自己项目的周报、计划、风险、里程碑、行动项。
+- 甲方项目经理：看到验收、收益等需要甲方关注的事项。
+
+## 生成行动建议
+
+点「生成行动建议」或「现在该做什么」，AI 会把清单和项目上下文整理成：今天先处理、本周要完成、需要协调、可以稍后。
+
+没有配置模型时用本地规则生成，仍然可用；配置模型后由模型解释原因和下一步，但不会自动写入任何数据。`],
   ['ai-assistant', 'AI 助手与配置', 'AI', '项目 AI、帮助问答、环境变量和隐私。', `# AI 助手
 
 ## 项目 AI
 
-项目页「AI 助手」可以生成项目摘要、周报草稿、风险建议，也可以自由提问。上下文来自当前项目的进度、风险、里程碑、关口、最新周报和计划摘要。
+项目页「AI 助手」最上面是「当前要处理」，按项目数据列出待办和关注事项；下面可以生成项目摘要、周报草稿、风险建议、行动建议，也可以自由提问。上下文来自当前项目的进度、风险、里程碑、关口、最新周报和计划摘要。
 
 ## 帮助问答
 
@@ -2193,6 +2223,171 @@ function projectKBSearch(projectId, q = '', kind = '', limit = 200, viewer = nul
   return { entries: rows.slice(0, Math.max(1, Math.min(300, limit))), counts, total: all.length };
 }
 
+function projectActionItems(projectId, viewer = null) {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+  if (!project) return [];
+  const t = today();
+  const week = mondayOf(t);
+  const items = [];
+  const add = (level, category, title, detail, tab, dueDate, audience, action) => {
+    items.push({
+      level,
+      priority: level === 'high' ? 'P0' : level === 'medium' ? 'P1' : 'P2',
+      category, title, detail, tab, due_date: dueDate || null,
+      audience: Array.isArray(audience) ? audience : ['项目经理'],
+      action: action || '',
+    });
+  };
+
+  // 周报：本周是否有、是否草稿/退回/待审
+  const currentReport = db.prepare('SELECT * FROM weekly_reports WHERE project_id = ? AND week_start = ?').get(projectId, week);
+  const reportDue = addCalendarDays(week, 4);
+  if (!currentReport) {
+    add('high', '周报', '本周周报还没提交', `${week} 这一周的周报还没有记录。先写本周进展、风险和下周计划，再提交 PMO 审核。`, 'reports', reportDue, ['项目经理', 'PMO'], '填写并提交周报');
+  } else if (currentReport.status === 'draft') {
+    add('high', '周报', '本周周报还是草稿', `${week} 周报已保存但未提交，PMO 看不到。检查正文后提交审核。`, 'reports', reportDue, ['项目经理', 'PMO'], '提交周报');
+  } else if (currentReport.status === 'rejected') {
+    add('high', '周报', '周报被退回，需要修改后重提', currentReport.review_comment || 'PMO 已退回本周周报，按审核意见修改正文后重新提交。', 'reports', reportDue, ['项目经理', 'PMO'], '修改并重新提交');
+  } else if (currentReport.status === 'submitted') {
+    add('high', '周报', '本周周报待 PMO 审核', `${week} 周报已提交，等待审核。审核通过或退回都会留下记录。`, 'reports', reportDue, ['PMO'], '审核周报');
+  }
+
+  // 章程
+  const charter = db.prepare('SELECT * FROM charters WHERE project_id = ?').get(projectId);
+  if (!charter) {
+    add('medium', '章程', '项目章程还没建', '章程是立项依据，写清目的、范围、成功标准和关键干系人后提交 PMO 审批。', 'process', null, ['项目经理', 'PMO'], '创建章程');
+  } else if (['draft', 'rejected'].includes(charter.status)) {
+    add('high', '章程', charter.status === 'rejected' ? '章程被退回，需要修改' : '章程还是草稿', charter.review_comment || '补齐章程内容并提交 PMO 审批，避免项目执行阶段没有授权依据。', 'process', null, ['项目经理', 'PMO'], '完善并提交章程');
+  } else if (charter.status === 'submitted') {
+    add('high', '章程', '项目章程待 PMO 审批', '章程已提交，PMO 应确认范围、目标和授权，避免后面变更没有基线。', 'process', null, ['PMO'], '审批章程');
+  }
+
+  // 计划
+  const plan = projectPlanPayload(projectId, { persist: false });
+  const tasks = (plan?.tasks || []).filter((x) => !x.isSummary);
+  if (!tasks.length) {
+    add('high', '计划', '整体计划还是空的', '没有任务分解，进度、关键路径和资源投入都无法计算。先把阶段和任务拆出来。', 'plan', null, ['项目经理', 'PMO'], '建立整体计划');
+  } else {
+    if (!plan.summary.baselineAt) {
+      add('medium', '计划', '计划还没有基线', '没有基线就无法比较进度偏差，也无法做 EVM。任务确认后设置一次基线。', 'plan', null, ['项目经理', 'PMO'], '设置计划基线');
+    }
+    if (plan.summary.deviation > 10) {
+      add('high', '计划', `计划比基线晚了 ${plan.summary.deviation} 个工作日`, '检查关键路径和资源，确认是任务延期还是基线本身需要调整；调整要留变更记录。', 'plan', null, ['项目经理'], '处理进度偏差');
+    }
+    const criticalOverdue = tasks.filter((x) => x.critical && x.progress < 100 && x.end_date && x.end_date < t);
+    if (criticalOverdue.length) {
+      add('high', '计划', `${criticalOverdue.length} 个关键任务已逾期`, `例如「${criticalOverdue[0].name}」计划 ${criticalOverdue[0].end_date} 结束，当前进度 ${criticalOverdue[0].progress}%。先确认影响范围和补救动作。`, 'plan', criticalOverdue[0].end_date, ['项目经理', 'PMO'], '处理关键任务');
+    }
+  }
+
+  // 关口与检查项
+  const gates = db.prepare(`
+    SELECT g.*, COUNT(c.id) AS check_total,
+      SUM(CASE WHEN c.required = 1 AND c.status NOT IN ('已完成', '不适用') THEN 1 ELSE 0 END) AS check_incomplete
+    FROM gates g LEFT JOIN gate_checks c ON c.gate_id = g.id
+    WHERE g.project_id = ? GROUP BY g.id ORDER BY g.planned_date
+  `).all(projectId);
+  const dueGates = gates.filter((g) => g.status === '待评审' && daysBetween(t, g.planned_date) <= 14);
+  if (dueGates.length) {
+    const first = dueGates[0];
+    const d = daysBetween(t, first.planned_date);
+    add(d <= 0 ? 'high' : 'medium', '关口', d <= 0 ? `关口「${first.name}」已到评审时间` : `关口「${first.name}」${d} 天后评审`, `计划 ${first.planned_date}。确认交付物、评审人和检查项，不要等到当天再补材料。`, 'governance', first.planned_date, ['项目经理', 'PMO'], '准备关口评审');
+  }
+  const gateIncomplete = gates.filter((g) => g.check_incomplete > 0 && g.status === '待评审');
+  if (gateIncomplete.length) {
+    add('medium', '关口', `${gateIncomplete.length} 个待评审关口有检查项未完成`, `「${gateIncomplete[0].name}」还有 ${gateIncomplete[0].check_incomplete} 项必检项未完成。先补齐再评审。`, 'governance', gateIncomplete[0].planned_date, ['项目经理'], '补齐检查项');
+  }
+
+  // 风险
+  const openRisks = db.prepare("SELECT * FROM risks WHERE project_id = ? AND status IN ('开放', '缓解中') ORDER BY probability * impact DESC").all(projectId);
+  const highRisks = openRisks.filter((r) => r.probability * r.impact >= 15);
+  if (highRisks.length) {
+    add('high', '风险', `${highRisks.length} 项高风险需要处理`, `敞口最高的是「${highRisks[0].title}」（${highRisks[0].probability * highRisks[0].impact}），责任人 ${highRisks[0].owner || '未指定'}，计划关闭 ${highRisks[0].due_date || '未定'}。`, 'risks', highRisks[0].due_date, ['项目经理', 'PMO'], '更新风险应对');
+  }
+  const riskOverdue = openRisks.filter((r) => r.due_date && r.due_date < t);
+  if (riskOverdue.length) {
+    add('high', '风险', `${riskOverdue.length} 项风险已过计划关闭日`, `「${riskOverdue[0].title}」计划 ${riskOverdue[0].due_date} 关闭，仍未关闭。要么更新应对，要么调整关闭时间并说明原因。`, 'risks', riskOverdue[0].due_date, ['项目经理'], '处理逾期风险');
+  }
+  const riskUnassigned = openRisks.filter((r) => !r.owner || !r.response);
+  if (riskUnassigned.length) {
+    add('medium', '风险', `${riskUnassigned.length} 项风险缺责任人或应对`, '风险没有责任人就不会有人跟进；至少写清谁负责、什么时候复评。', 'risks', null, ['项目经理'], '补齐风险责任');
+  }
+
+  // 里程碑
+  const milestones = db.prepare("SELECT * FROM milestones WHERE project_id = ? AND status <> '已完成' ORDER BY due_date").all(projectId);
+  const msOverdue = milestones.filter((m) => m.due_date < t);
+  const msSoon = milestones.filter((m) => m.due_date >= t && daysBetween(t, m.due_date) <= 7);
+  if (msOverdue.length) {
+    add('high', '里程碑', `${msOverdue.length} 个里程碑已逾期`, `「${msOverdue[0].name}」计划 ${msOverdue[0].due_date}，仍未完成。确认是否影响后续依赖，必要时升级到项目群。`, 'milestones', msOverdue[0].due_date, ['项目经理', 'PMO'], '处理逾期里程碑');
+  } else if (msSoon.length) {
+    add('medium', '里程碑', `${msSoon.length} 个里程碑 7 天内到期`, `最近的是「${msSoon[0].name}」（${msSoon[0].due_date}）。提前确认交付物和验收人。`, 'milestones', msSoon[0].due_date, ['项目经理', 'PMO'], '准备里程碑交付');
+  }
+
+  // 变更
+  const changes = db.prepare("SELECT * FROM change_requests WHERE project_id = ? AND status = '待审批' ORDER BY created_at").all(projectId);
+  if (changes.length) {
+    add('high', '变更', `${changes.length} 条变更待审批`, `「${changes[0].title}」会影响范围/进度/成本，先完成影响分析再决定是否批准。`, 'process', null, ['PMO'], '审批变更');
+  }
+
+  // 行动项
+  const actions = db.prepare("SELECT * FROM actions WHERE project_id = ? AND status NOT IN ('已完成', '已取消') ORDER BY due_date").all(projectId);
+  const actionOverdue = actions.filter((a) => a.due_date && a.due_date < t);
+  if (actionOverdue.length) {
+    add('medium', '行动项', `${actionOverdue.length} 条行动项逾期`, `「${actionOverdue[0].title}」计划 ${actionOverdue[0].due_date} 完成，责任人 ${actionOverdue[0].owner || '未指定'}。`, 'value', actionOverdue[0].due_date, ['项目经理'], '更新行动项');
+  }
+
+  // 收益
+  const benefits = db.prepare("SELECT * FROM benefits WHERE project_id = ? AND status <> '已关闭'").all(projectId);
+  const benefitDue = benefits.filter((b) => b.due_date && b.due_date <= addCalendarDays(t, 30) && ((b.direction === 'down' && b.current_value > b.target_value) || (b.direction !== 'down' && b.current_value < b.target_value)));
+  if (benefitDue.length) {
+    add('low', '收益', `${benefitDue.length} 项收益指标接近复盘日`, `「${benefitDue[0].name}」目标 ${benefitDue[0].target_value}${benefitDue[0].unit}，当前 ${benefitDue[0].current_value}${benefitDue[0].unit}，计划 ${benefitDue[0].due_date} 复盘。`, 'value', benefitDue[0].due_date, ['项目经理', '甲方'], '更新收益数据');
+  }
+
+  // 验收
+  const acceptanceCount = db.prepare('SELECT COUNT(*) AS n FROM acceptances WHERE project_id = ?').get(projectId).n;
+  const closing = ['验收中', '收尾', '已归档', '已关闭'].includes(project.stage) || project.progress >= 90;
+  if (closing && !acceptanceCount) {
+    add('high', '验收', '项目接近收尾，还没有验收记录', '整理交付物、验收标准和甲方确认人，先做一次内部验收预检，再提交甲方验收。', 'value', project.plan_end, ['项目经理', '甲方'], '准备项目验收');
+  }
+
+  // 基础信息
+  if (!project.objective) {
+    add('low', '项目信息', '项目目标还没写', '目标不清楚，后续范围、收益和验收都没有判断标准。补一句可衡量的目标。', 'overview', null, ['项目经理'], '补项目目标');
+  }
+  if (!project.plan_start || !project.plan_end) {
+    add('low', '项目信息', '计划起止日期不完整', '计划窗口缺失会影响健康度、逾期和 EVP 计算。补齐起止日期。', 'overview', null, ['项目经理'], '补计划窗口');
+  }
+
+  const rank = { high: 0, medium: 1, low: 2 };
+  items.sort((a, b) => rank[a.level] - rank[b.level] || String(a.due_date || '9999-12-31').localeCompare(String(b.due_date || '9999-12-31')));
+  const isPmoViewer = viewer && viewer.role === 'pmo';
+  const isClientViewer = viewer && project.client_pm_id === viewer.id;
+  const visible = isPmoViewer ? items : items.filter((x) => isClientViewer
+    ? x.audience.includes('甲方') || x.audience.includes('双方')
+    : x.audience.includes('项目经理') || x.audience.includes('双方'));
+  return visible;
+}
+
+function projectActionBrief(projectId, viewer) {
+  const project = db.prepare('SELECT id, code, name, stage, progress, plan_end, vendor_pm_id, client_pm_id FROM projects WHERE id = ?').get(projectId);
+  if (!project) return null;
+  const items = projectActionItems(projectId, viewer);
+  const counts = {
+    total: items.length,
+    high: items.filter((x) => x.level === 'high').length,
+    medium: items.filter((x) => x.level === 'medium').length,
+    low: items.filter((x) => x.level === 'low').length,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    date: today(),
+    project,
+    counts,
+    items,
+    summary: counts.high ? `${counts.high} 项需要优先处理，${counts.medium} 项本周跟进。` : counts.medium ? `${counts.medium} 项本周跟进，暂无逾期或高风险。` : '当前没有明显待办，建议检查计划、周报和关口是否齐全。',
+  };
+}
+
 function projectAIContext(projectId, question = '', mode = 'summary', viewer = null) {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
   if (!project) return null;
@@ -2211,6 +2406,7 @@ function projectAIContext(projectId, question = '', mode = 'summary', viewer = n
   const knowledge = projectKBSearch(projectId, kbQuery, '', 6, viewer).entries
     .map((e) => ({ id: e.id, kind: e.kind, kind_label: e.kind_label, title: e.title, summary: e.summary, content: String(e.content || '').slice(0, 700), date: e.date, status: e.status }));
   return {
+    action_items: projectActionItems(projectId, viewer),
     project: {
       code: project.code, name: project.name, stage: project.stage, priority: project.priority,
       progress: project.progress, plan_start: project.plan_start, plan_end: project.plan_end,
@@ -2270,6 +2466,34 @@ ${riskLines}
 - 对依赖外部条件的风险，在周报里写清触发条件和备选方案。
 - 高风险项建议提交项目群例会，不要让它在项目内自己消化。`;
   }
+  if (mode === 'actions') {
+    const items = context.action_items || [];
+    const group = (level) => items.filter((x) => x.level === level);
+    const render = (list) => list.length
+      ? list.map((x, i) => `${i + 1}. **${x.title}**（${x.category}，${x.priority}）\n   - 为什么现在做：${x.detail}\n   - 下一步：${x.action || '打开对应页面处理'}\n   - 责任：${(x.audience || []).join(' / ')}${x.due_date ? `；时间：${x.due_date}` : ''}`).join('\n')
+      : '暂无。';
+    return `# ${p.name} 当前要处理
+
+> 依据项目当前数据自动生成，处理完刷新即可。AI 只做提示，不替代 PMO 判断。
+
+## 今天先处理
+
+${render(group('high'))}
+
+## 本周要完成
+
+${render(group('medium'))}
+
+## 可以稍后
+
+${render(group('low'))}
+
+## 需要协调
+
+${items.some((x) => x.audience.includes('PMO')) ? '- 标了 PMO 的事项需要 PMO 审核或跨项目协调，建议在周报和例会上明确。' : '- 当前没有必须 PMO 介入的事项。'}
+
+> 当前为本地规则结果；配置模型后可由模型结合知识库做更细的解释。`;
+  }
   if (mode === 'summary') {
     return `# ${p.name} 项目摘要
 
@@ -2283,6 +2507,10 @@ ${riskLines}
 ## 当前重点
 
 ${p.objective || '项目目标未填写。'}
+
+## 现在要处理
+
+${(context.action_items || []).slice(0, 4).map((x, i) => `${i + 1}. ${x.title}（${x.priority}）`).join('\n') || '暂无明确待办。'}
 
 ## 风险
 
@@ -5693,13 +5921,21 @@ async function handleApi(req, res, u) {
     return json(res, { ok: true });
   }
 
+  const projectAIBrief = p.match(/^\/api\/projects\/(\d+)\/ai\/brief$/);
+  if (projectAIBrief && method === 'GET') {
+    const projectId = Number(projectAIBrief[1]);
+    if (!db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId)) return json(res, { error: '项目不存在' }, 404);
+    requireViewProject(me, projectId);
+    return json(res, projectActionBrief(projectId, me));
+  }
+
   const projectAI = p.match(/^\/api\/projects\/(\d+)\/ai$/);
   if (projectAI && method === 'POST') {
     const projectId = Number(projectAI[1]);
     if (!db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId)) return json(res, { error: '项目不存在' }, 404);
     requireViewProject(me, projectId);
     const b = await readBody(req);
-    const mode = ['summary', 'weekly', 'risks', 'ask'].includes(b.mode) ? b.mode : 'summary';
+    const mode = ['summary', 'weekly', 'risks', 'actions', 'ask'].includes(b.mode) ? b.mode : 'summary';
     const question = String(b.question || '').trim().slice(0, 2000);
     if (mode === 'ask' && !question) throw fail('请先输入问题');
     const last = aiLastCall.get(`project:${me.id}:${projectId}`) || 0;
@@ -5711,6 +5947,7 @@ async function handleApi(req, res, u) {
       summary: '用 300 字以内总结项目当前状态、主要风险和下一步重点。',
       weekly: '根据项目上下文生成一份项目周报草稿，使用 Markdown，包含本周进展、关键成果、下周计划、风险与问题、需协调事项。不要编造没有发生的事实，未知内容写“待补充”。',
       risks: '基于项目上下文给出 3–5 条风险应对建议，指出优先级和责任人类型；不要编造具体人名。',
+      actions: '根据 action_items 和项目现状，告诉 PMO/项目人员现在要处理什么。用 Markdown 分四段：## 今天先处理、## 本周要完成、## 需要协调、## 可以稍后。每条写清：事项、为什么现在做、下一步动作、建议责任角色和时间；没有依据的不要编。',
       ask: '回答项目成员的问题，结合项目上下文；不确定时说明不确定。',
     }[mode];
     let answer = null;
