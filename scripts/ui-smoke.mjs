@@ -153,6 +153,8 @@ async function main() {
   const navCount = await ev(`document.querySelectorAll('#rail-nav .nav-item').length`);
   if (navCount < 16) throw new Error(`导航项数量不对：${navCount}`);
   if (!(await ev(`Boolean(document.querySelector('#rail-toggle'))`))) throw new Error('没有侧栏收起按钮');
+  if ((await ev(`document.querySelector('.rail').scrollHeight`)) > (await ev(`document.querySelector('.rail').clientHeight`)) + 1) throw new Error('侧栏出现上下滚动');
+  if ((await ev(`Math.round(document.querySelectorAll('.nav-item')[document.querySelectorAll('.nav-item').length - 1].getBoundingClientRect().bottom)`)) > (await ev(`Math.round(document.querySelector('.rail').getBoundingClientRect().bottom)`))) throw new Error('侧栏最后一个菜单没有显示完整');
   if ((await ev(`getComputedStyle(document.querySelector('.mark')).transform`)) !== 'none') throw new Error('侧栏 Logo 仍是 3D 透视');
   if ((await ev(`getComputedStyle(document.querySelector('.btn')).borderRadius`)) === '0px') throw new Error('按钮没有统一圆角');
   if ((await ev(`getComputedStyle(document.querySelector('.nav-item')).borderRadius`)) === '0px') throw new Error('导航没有统一圆角');

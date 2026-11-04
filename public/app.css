@@ -4119,3 +4119,51 @@ body.is-rail-collapsed .rail-program-switch { display: none; }
 .md-editor { border-radius: var(--r-md); overflow: hidden; }
 .md-toolbar { border-radius: var(--r-md) var(--r-md) 0 0; }
 .md-preview pre { border-radius: var(--r-sm); }
+
+/* ------------------------------------------------------ compact left rail ---
+   16 个菜单在 800px 高的窗口里也要全部露出，不产生上下滚动。
+   压缩的是行高、分组间距和页脚留白，不缩小可点击区域到难点。
+   -------------------------------------------------------------------------- */
+
+.rail {
+  padding: 18px 0 14px;
+  overflow: hidden;
+}
+.rail-head {
+  padding: 0 22px 16px;
+}
+.rail-nav {
+  padding: 2px 0;
+}
+.nav-item {
+  padding: 5px 14px;
+  gap: 9px;
+}
+.nav-item .lbl { font-size: 12.5px; }
+.nav-item .idx { width: 13px; font-size: 8.5px; }
+.nav-ico { width: 16px; height: 16px; }
+.nav-ico svg { width: 16px; height: 16px; }
+.nav-sep { margin: 8px 14px 6px; }
+.rail-foot {
+  gap: 10px;
+  padding: 12px 22px 0;
+}
+.rail-user {
+  padding-bottom: 9px;
+  margin-bottom: 8px;
+}
+.rail-program strong { font-size: 12px; }
+.rail-meta { font-size: 9px; }
+
+body.is-rail-collapsed .rail { padding-top: 18px; }
+body.is-rail-collapsed .rail-head { padding-bottom: 12px; }
+body.is-rail-collapsed .nav-item { padding: 8px 0; }
+body.is-rail-collapsed .nav-sep { margin: 8px 18px; }
+body.is-rail-collapsed .rail-foot { padding-top: 10px; }
+
+@media (max-height: 720px) {
+  .rail-program,
+  .rail-meta { display: none; }
+  .rail-head { padding-bottom: 10px; }
+  .rail-foot { padding-top: 8px; }
+}
