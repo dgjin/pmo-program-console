@@ -254,6 +254,18 @@ async function main() {
   if (!(await ev(`Boolean(document.querySelector('.help-ai-page'))`))) throw new Error('智能问答页签没有渲染');
   await auditPage('智能问答页');
 
+  await send('Page.navigate', { url: `${BASE}/?smoke=8#/report` });
+  await wait(1200);
+  if ((await ev(`document.querySelectorAll('.report-warning').length`)) < 1) throw new Error('项目群周报没有显示数据缺口');
+  if ((await ev(`document.querySelectorAll('.report-history-item').length`)) < 1) throw new Error('项目群周报没有历史快照');
+  await ev(`document.querySelector('.report-history-item')?.click()`);
+  await wait(700);
+  if (!(await ev(`Boolean(document.querySelector('.report-snapshot-bar'))`))) throw new Error('历史周报没有打开快照');
+  await ev(`document.querySelector('[data-action="report-history-back"]')?.click()`);
+  await wait(700);
+  if (await ev(`Boolean(document.querySelector('.report-snapshot-bar'))`)) throw new Error('返回本周后仍停留在历史快照');
+  await auditPage('项目群周报页');
+
   await send('Page.navigate', { url: `${BASE}/?smoke=8#/admin` });
   await wait(1200);
   if (!(await ev(`[...document.querySelectorAll('#user-role-filter option')].some(o => o.value === 'client_member')`))) throw new Error('用户角色筛选缺少甲方项目成员');

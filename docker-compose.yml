@@ -1,7 +1,7 @@
 services:
   pmo:
     build: .
-    image: pmo-program-console:1.51.0
+    image: pmo-program-console:1.52.0
     container_name: pmo
     ports:
       - "5177:5177"

@@ -4245,3 +4245,62 @@ body.is-rail-collapsed .rail-foot { padding-top: 10px; }
 }
 .help-empty b { font-size: 15px; font-weight: 500; }
 .help-empty p { margin: 7px 0 14px; color: var(--ink-3); font-size: 12px; }
+
+/* 项目群周报：缺口提示、快照状态和历史 */
+.report-warning {
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(125, 85, 8, .28);
+  border-left: 3px solid var(--ochre);
+  border-radius: var(--r-md);
+  background: var(--ochre-soft);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  line-height: 1.75;
+}
+.report-warning > b { display: block; margin-bottom: 4px; color: var(--ochre); font-weight: 500; }
+.report-warning ul { margin: 0; padding-left: 18px; }
+.report-warning li + li { margin-top: 2px; }
+.report-warning strong { font-weight: 500; color: var(--ink); }
+.report-snapshot-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 10px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.report-history { margin-top: 32px; }
+.report-history-list { border-top: 1px solid var(--rule); }
+.report-history-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 11px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--rule-soft);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+}
+.report-history-item:hover { background: var(--surface); }
+.report-history-item.is-current { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--oxblood); }
+.report-history-week { font-family: var(--mono); font-size: 9.5px; color: var(--ink-3); }
+.report-history-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.report-history-main b { font-size: 12px; font-weight: 500; }
+.report-history-main i { font-style: normal; font-family: var(--mono); font-size: 8.5px; color: var(--ink-4); }
+.report-history-warn { font-family: var(--mono); font-size: 8.5px; color: var(--ochre); white-space: nowrap; }
+.report-history-item.is-current .report-history-warn { color: var(--oxblood); }
+@media (max-width: 900px) {
+  .report-snapshot-bar { flex-direction: column; align-items: flex-start; }
+  .report-history-item { grid-template-columns: 76px minmax(0, 1fr); }
+  .report-history-warn { grid-column: 2; }
+}

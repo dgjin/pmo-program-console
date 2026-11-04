@@ -46,6 +46,7 @@ const state = {
   userFilters: { q: '', role: '全部', party: '全部', status: '全部' },
   loginBusy: false,
   ai: null,
+  reportSnapshot: null,
   projectAIBrief: null,
   help: { q: '', category: '全部', tab: 'kb', messages: [], draft: '' },
   projectKB: null,
@@ -4279,14 +4280,17 @@ async function viewProgramPlan() {
         </footer>
       </article>
     </div>
-  </div>`;
+
+      </div>`;
 }
 
 async function viewReport() {
   if (!state.data.projects.length) return emptyProgramView('WEEKLY REPORT <span class="sep">/</span> AUTO-GENERATED', '项目群周报', '依据台账实时数据生成项目群周报。');
-  if (state.reportTab === 'plan') return viewProgramPlan();
-  if (!state.report) state.report = await api('/api/report');
-  const r = state.report;
+  if (state.reportTab === 'plan') { state.reportSnapshot = null; return viewProgramPlan(); }
+  if (!state.reportSnapshot && !state.report) state.report = await api('/api/report');
+  const r = state.reportSnapshot || state.report;
+  const isPmo = state.me.role === 'pmo';
+  const viewingSnapshot = Boolean(state.reportSnapshot);
   const sections = r.sections.map((s, i) => `<section class="sheet-section" id="sec-${i}">
     <h3>${esc(s.heading)}</h3>
     ${(s.paragraphs || []).map((p) => `<p>${esc(p)}</p>`).join('')}
@@ -4300,11 +4304,14 @@ async function viewReport() {
       eyebrow: 'WEEKLY REPORT / AUTO-GENERATED',
       title: '项目群周报',
       sub: '依据台账实时数据生成，包含进度、逾期节点、主要风险与需协调事项。可直接复制或导出 Markdown 进入公文流程。',
-      actions: `<button class="btn btn--quiet" data-action="report-copy">${ICONS.copy}复制 Markdown</button>
+      actions: `${viewingSnapshot ? '' : (isPmo ? `<button class="btn btn--quiet" data-action="report-snapshot">${ICONS.refresh || ''}更新本周快照</button>` : '')}
+        <button class="btn btn--quiet" data-action="report-copy">${ICONS.copy}复制 Markdown</button>
         <button class="btn btn--quiet" data-action="report-download">${ICONS.download}下载 .md</button>
         <button class="btn btn--solid" data-action="report-print">${ICONS.print}打印</button>`,
     })}
 
+    ${viewingSnapshot ? `<div class="report-snapshot-bar"><span>正在查看历史快照：${esc(r.coverage?.weekStart || r.period || '')}，生成于 ${esc(fmtDateTime(r.generated_at || ''))}</span><button class="btn btn--sm btn--quiet" data-action="report-history-back">返回本周</button></div>` : ''}
+    ${r.warnings?.length ? `<div class="report-warning"><b>生成时有 ${r.warnings.length} 项数据缺口</b><ul>${r.warnings.map((w) => `<li><strong>${esc(w.title)}</strong>：${esc(w.detail || '')}</li>`).join('')}</ul></div>` : ''}
     <div class="report-tabs">
       <div class="dlv-tabs">
         <button class="dlv-tab is-on" data-action="report-tab" data-value="weekly">项目群周报</button>
@@ -4347,6 +4354,17 @@ async function viewReport() {
         </footer>
       </article>
     </div>
+
+    ${isPmo && (r.history || []).length ? `<section class="panel report-history">
+      <div class="panel-head"><h2><span class="no">HISTORY</span>历史周报</h2><span class="hint">每周自动保存一份，当前 ${r.history.length} 份</span></div>
+      <div class="report-history-list">
+        ${r.history.map((h) => `<button class="report-history-item${h.id === r.id ? ' is-current' : ''}" data-action="report-history-open" data-id="${h.id}">
+          <span class="report-history-week">${esc(h.week_start)}</span>
+          <span class="report-history-main"><b>${esc(h.title)}</b><i>${esc(h.period)} · ${h.trigger === 'manual' ? '手动更新' : h.trigger === 'scheduled' ? '定时生成' : '自动生成'} · ${esc(fmtDateTime(h.generated_at))}</i></span>
+          <span class="report-history-warn">${h.warnings?.length ? `${h.warnings.length} 项缺口` : '数据完整'}</span>
+        </button>`).join('')}
+      </div>
+    </section>` : ''}
   </div>`;
 }
 
@@ -7164,7 +7182,7 @@ async function handleAction(action, el) {
       render();
       break;
     case 'report-copy': {
-      const text = state.report?.markdown || '';
+      const text = state.reportSnapshot?.markdown || state.report?.markdown || '';
       try {
         await navigator.clipboard.writeText(text);
         toast('周报 Markdown 已复制');
@@ -7173,8 +7191,41 @@ async function handleAction(action, el) {
       }
       break;
     }
-    case 'report-download':
-      window.location.href = '/api/report.md';
+    case 'report-download': {
+      const snap = state.reportSnapshot;
+      if (snap?.markdown) {
+        const blob = new Blob([snap.markdown], { type: 'text/markdown;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `pmo-weekly-${snap.week_start || snap.coverage?.weekStart || 'snapshot'}.md`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      } else {
+        window.location.href = '/api/report.md';
+      }
+      break;
+    }
+    case 'report-snapshot':
+      try {
+        const r = await api('/api/report/snapshot', { method: 'POST' });
+        state.report = null;
+        state.reportSnapshot = null;
+        await render();
+        toast(`本周快照已更新${r.warnings?.length ? `，有 ${r.warnings.length} 项缺口` : ''}`);
+      } catch (e) { toast(e.message, 'err'); }
+      break;
+    case 'report-history-open':
+      try {
+        state.reportSnapshot = await api(`/api/report/history/${el.dataset.id}`);
+        await render();
+        window.scrollTo(0, 0);
+      } catch (e) { toast(e.message, 'err'); }
+      break;
+    case 'report-history-back':
+      state.reportSnapshot = null;
+      state.report = null;
+      await render();
+      window.scrollTo(0, 0);
       break;
     case 'report-print':
       window.print();
@@ -7495,6 +7546,7 @@ window.addEventListener('hashchange', async () => {
   const r = parseRoute();
   state.route = r.route;
   state.params = r.params;
+  if (r.route !== 'report') state.reportSnapshot = null;
   window.scrollTo(0, 0);
   await render();
 });

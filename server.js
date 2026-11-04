@@ -477,6 +477,21 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reports_week ON weekly_reports (week_start);
+CREATE TABLE IF NOT EXISTS program_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  program_id INTEGER NOT NULL,
+  week_start TEXT NOT NULL,
+  title TEXT NOT NULL,
+  period TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  generated_by TEXT NOT NULL DEFAULT '系统自动',
+  trigger TEXT NOT NULL DEFAULT 'auto',
+  markdown TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  warnings TEXT NOT NULL DEFAULT '[]',
+  UNIQUE (program_id, week_start)
+);
+CREATE INDEX IF NOT EXISTS idx_program_reports_program ON program_reports (program_id, week_start DESC);
 CREATE INDEX IF NOT EXISTS idx_plans_period ON plans (period_label);
 CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log (target_type, target_id);
 CREATE TABLE IF NOT EXISTS gates (
@@ -662,7 +677,7 @@ CREATE TABLE IF NOT EXISTS task_deps (
 `);
 
 // 结构版本：后续加字段时在这里做增量迁移
-db.exec('PRAGMA user_version = 20;');
+db.exec('PRAGMA user_version = 21;');
 
 // v6：双项目经理（甲方 / 乙方）。老库用 ALTER 补列，不动已有数据。
 function ensureColumn(table, column, definition) {
@@ -4445,6 +4460,25 @@ function buildReport(model = null) {
     ORDER BY p.priority ASC, p.code ASC
   `).all(weekStart).map(hydrateRow);
   const approvedCount = submitted.filter((r) => r.status === 'approved').length;
+  const submittedIds = new Set(submitted.map((r) => r.project_id));
+  const missingProjects = m.projects.filter((p) => !submittedIds.has(p.id));
+  const warnings = [];
+  if (!m.projects.length) {
+    warnings.push({ title: '项目群下还没有项目', detail: '先在项目台账新建项目，周报才能汇总出内容。' });
+  } else if (missingProjects.length) {
+    warnings.push({
+      title: `${missingProjects.length} 个项目本周没有提交周报`,
+      detail: missingProjects.map((p) => `${p.code} ${p.name}`).join('、'),
+    });
+  }
+  const noManager = m.projects.filter((p) => !p.pm || !p.client_pm);
+  if (noManager.length) {
+    warnings.push({ title: `${noManager.length} 个项目没有配齐双方项目经理`, detail: noManager.map((p) => p.code).join('、') });
+  }
+  const noObjective = m.projects.filter((p) => !p.objective);
+  if (noObjective.length) {
+    warnings.push({ title: `${noObjective.length} 个项目没有写项目目标`, detail: noObjective.map((p) => p.code).join('、') });
+  }
 
   sections.push({
     heading: '二、项目进展摘要',
@@ -4514,6 +4548,14 @@ function buildReport(model = null) {
     ],
   });
 
+  if (warnings.length) {
+    sections.push({
+      heading: '七、数据缺口与补录提示',
+      paragraphs: ['本周报已按当前台账数据生成；下面这些内容缺失，建议在下次项目群例会前补齐。'],
+      bullets: warnings.map((w) => `${w.title}：${w.detail}`),
+    });
+  }
+
   const md = [];
   md.push(`# ${m.program.name} 项目群周报`);
   md.push('');
@@ -4542,8 +4584,57 @@ function buildReport(model = null) {
     sections,
     markdown: md.join('\n'),
     stats: m.stats,
-    coverage: { weekStart, total: m.stats.total, submitted: submitted.length, approved: approvedCount },
+    warnings,
+    coverage: { weekStart, total: m.stats.total, submitted: submitted.length, approved: approvedCount, missing: missingProjects.length },
   };
+}
+
+function saveProgramReport(programId, report, trigger = 'auto', generatedBy = '系统自动') {
+  const weekStart = report.coverage.weekStart;
+  const generatedAt = new Date().toISOString();
+  const payload = JSON.stringify(report);
+  const warnings = JSON.stringify(report.warnings || []);
+  const existing = db.prepare('SELECT id FROM program_reports WHERE program_id = ? AND week_start = ?').get(programId, weekStart);
+  db.prepare(`INSERT INTO program_reports
+    (program_id, week_start, title, period, generated_at, generated_by, trigger, markdown, payload, warnings)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(program_id, week_start) DO UPDATE SET
+      title = excluded.title, period = excluded.period, generated_at = excluded.generated_at,
+      generated_by = excluded.generated_by, trigger = excluded.trigger,
+      markdown = excluded.markdown, payload = excluded.payload, warnings = excluded.warnings`).run(
+    programId, weekStart, report.title, report.period, generatedAt, generatedBy,
+    trigger, report.markdown, payload, warnings);
+  return db.prepare('SELECT id FROM program_reports WHERE program_id = ? AND week_start = ?').get(programId, weekStart).id;
+}
+
+function ensureProgramReport(programId, trigger = 'auto') {
+  const model = filterModelForProgram(buildModel(), programId);
+  if (!model) return null;
+  const report = buildReport(model);
+  const id = saveProgramReport(programId, report, trigger);
+  return { id, week_start: report.coverage.weekStart };
+}
+
+function ensureProgramReports(trigger = 'auto') {
+  const programs = db.prepare('SELECT id FROM programs').all();
+  for (const p of programs) {
+    try { ensureProgramReport(p.id, trigger); } catch (err) { console.error(`[report] program ${p.id}:`, err.message); }
+  }
+}
+
+function programReportHistory(programId, limit = 16) {
+  return db.prepare(`SELECT id, week_start, title, period, generated_at, generated_by, trigger, warnings, payload
+    FROM program_reports WHERE program_id = ? ORDER BY week_start DESC LIMIT ?`).all(programId, limit).map((row) => {
+    let payload = {};
+    try { payload = JSON.parse(row.payload); } catch { payload = {}; }
+    let warnings = [];
+    try { warnings = JSON.parse(row.warnings); } catch { warnings = []; }
+    return {
+      id: row.id, week_start: row.week_start, title: row.title, period: row.period,
+      generated_at: row.generated_at, generated_by: row.generated_by, trigger: row.trigger,
+      warnings, coverage: payload.coverage || null,
+    };
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -5439,7 +5530,7 @@ async function handleApi(req, res, u) {
 
     db.exec('BEGIN IMMEDIATE');
     try {
-      for (const table of ['events', 'updates', 'allocations', 'risks', 'milestones', 'weekly_reports', 'plans',
+      for (const table of ['events', 'updates', 'allocations', 'risks', 'milestones', 'weekly_reports', 'program_reports', 'plans',
         'deliverable_revisions', 'deliverable_comments', 'dependencies', 'charters', 'change_requests', 'lessons',
         'plan_tasks', 'task_deps', 'benefits', 'actions', 'acceptances', 'gate_checks', 'gates', 'projects', 'user_projects', 'audit_log']) {
         db.exec(`DELETE FROM ${table}`);
@@ -7529,7 +7620,32 @@ function capacityReport(programId = null) {
 
   if (method === 'GET' && p === '/api/report') {
     const programId = resolveProgramId(req, me);
-    return json(res, buildReport(filterModelForUser(filterModelForProgram(buildModel(), programId), me)));
+    const report = buildReport(filterModelForUser(filterModelForProgram(buildModel(), programId), me));
+    if (isPmo(me) && programId) {
+      try { ensureProgramReport(programId, 'on-demand'); } catch (err) { console.error('[report] snapshot:', err.message); }
+      report.history = programReportHistory(programId);
+    }
+    return json(res, report);
+  }
+
+  if (method === 'POST' && p === '/api/report/snapshot') {
+    requirePmo(me);
+    const programId = resolveProgramId(req, me);
+    if (!programId) throw fail('没有可用的项目群');
+    const report = buildReport(filterModelForProgram(buildModel(), programId));
+    const id = saveProgramReport(programId, report, 'manual', me.name);
+    return json(res, { ok: true, id, week_start: report.coverage.weekStart, warnings: report.warnings });
+  }
+
+  const reportHistoryItem = p.match(/^\/api\/report\/history\/(\d+)$/);
+  if (reportHistoryItem && method === 'GET') {
+    requirePmo(me);
+    const programId = resolveProgramId(req, me);
+    const row = db.prepare('SELECT * FROM program_reports WHERE id = ? AND program_id = ?').get(Number(reportHistoryItem[1]), programId);
+    if (!row) return json(res, { error: '历史周报不存在' }, 404);
+    let payload = {};
+    try { payload = JSON.parse(row.payload); } catch { payload = {}; }
+    return json(res, { ...payload, id: row.id, week_start: row.week_start, generated_at: row.generated_at, generated_by: row.generated_by, trigger: row.trigger, history: programReportHistory(programId) });
   }
 
   if (method === 'GET' && p === '/api/report.md') {
@@ -7556,6 +7672,7 @@ function capacityReport(programId = null) {
       updates: db.prepare('SELECT * FROM updates').all(),
       plans: db.prepare('SELECT * FROM plans').all(),
       weeklyReports: db.prepare('SELECT * FROM weekly_reports').all(),
+      programReports: db.prepare('SELECT * FROM program_reports').all(),
       gates: db.prepare('SELECT * FROM gates').all(),
       revisions: db.prepare('SELECT * FROM deliverable_revisions').all(),
       comments: db.prepare('SELECT * FROM deliverable_comments').all(),
@@ -7582,7 +7699,7 @@ function capacityReport(programId = null) {
     if (!Array.isArray(b.projects)) throw fail('备份文件缺少 projects 数组');
     db.exec('BEGIN');
     try {
-      for (const t of ['events', 'updates', 'allocations', 'risks', 'milestones', 'weekly_reports', 'plans', 'deliverable_revisions', 'deliverable_comments', 'dependencies', 'charters', 'change_requests', 'lessons', 'plan_tasks', 'task_deps', 'benefits', 'actions', 'acceptances', 'gate_checks', 'gates', 'projects', 'programs']) {
+      for (const t of ['events', 'updates', 'allocations', 'risks', 'milestones', 'weekly_reports', 'program_reports', 'plans', 'deliverable_revisions', 'deliverable_comments', 'dependencies', 'charters', 'change_requests', 'lessons', 'plan_tasks', 'task_deps', 'benefits', 'actions', 'acceptances', 'gate_checks', 'gates', 'projects', 'programs']) {
         db.exec(`DELETE FROM ${t}`);
       }
       const insProgram = db.prepare(
@@ -7722,6 +7839,15 @@ function capacityReport(programId = null) {
           r.author_id, r.author_name, r.submitted_at, r.reviewed_by, r.reviewer_name,
           r.reviewed_at, r.review_comment, r.created_at, r.updated_at);
       }
+      const insProgramReport = db.prepare(`
+        INSERT OR REPLACE INTO program_reports
+        (id, program_id, week_start, title, period, generated_at, generated_by, trigger, markdown, payload, warnings)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const r of b.programReports || []) {
+        insProgramReport.run(r.id, r.program_id, r.week_start, r.title, r.period, r.generated_at,
+          r.generated_by || '系统自动', r.trigger || 'auto', r.markdown || '', r.payload || '{}', r.warnings || '[]');
+      }
       const insGate = db.prepare(`
         INSERT INTO gates (id, project_id, name, phase, planned_date, actual_date, status, reviewer, decision, conditions, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -7791,7 +7917,7 @@ function capacityReport(programId = null) {
     requirePmo(me);
     db.exec('BEGIN');
     try {
-      for (const t of ['events', 'updates', 'allocations', 'risks', 'milestones', 'weekly_reports', 'plans', 'deliverable_revisions', 'deliverable_comments', 'dependencies', 'charters', 'change_requests', 'lessons', 'plan_tasks', 'task_deps', 'benefits', 'actions', 'acceptances', 'gate_checks', 'gates', 'projects', 'programs', 'audit_log']) {
+      for (const t of ['events', 'updates', 'allocations', 'risks', 'milestones', 'weekly_reports', 'program_reports', 'plans', 'deliverable_revisions', 'deliverable_comments', 'dependencies', 'charters', 'change_requests', 'lessons', 'plan_tasks', 'task_deps', 'benefits', 'actions', 'acceptances', 'gate_checks', 'gates', 'projects', 'programs', 'audit_log']) {
         db.exec(`DELETE FROM ${t}; DELETE FROM sqlite_sequence WHERE name = '${t}';`);
       }
       db.exec('COMMIT');
@@ -7871,6 +7997,7 @@ function capacityReport(programId = null) {
       updates: db.prepare('SELECT * FROM updates').all(),
       plans: db.prepare('SELECT * FROM plans').all(),
       weeklyReports: db.prepare('SELECT * FROM weekly_reports').all(),
+      programReports: db.prepare('SELECT * FROM program_reports').all(),
       gates: db.prepare('SELECT * FROM gates').all(),
       revisions: db.prepare('SELECT * FROM deliverable_revisions').all(),
       comments: db.prepare('SELECT * FROM deliverable_comments').all(),
@@ -7897,7 +8024,7 @@ function capacityReport(programId = null) {
     if (!Array.isArray(b.projects)) throw fail('备份文件缺少 projects 数组');
     db.exec('BEGIN');
     try {
-      for (const t of ['events', 'updates', 'allocations', 'risks', 'milestones', 'weekly_reports', 'plans', 'deliverable_revisions', 'deliverable_comments', 'dependencies', 'charters', 'change_requests', 'lessons', 'plan_tasks', 'task_deps', 'benefits', 'actions', 'acceptances', 'gate_checks', 'gates', 'projects', 'programs']) {
+      for (const t of ['events', 'updates', 'allocations', 'risks', 'milestones', 'weekly_reports', 'program_reports', 'plans', 'deliverable_revisions', 'deliverable_comments', 'dependencies', 'charters', 'change_requests', 'lessons', 'plan_tasks', 'task_deps', 'benefits', 'actions', 'acceptances', 'gate_checks', 'gates', 'projects', 'programs']) {
         db.exec(`DELETE FROM ${t}`);
       }
       const insProgram = db.prepare(
@@ -8037,6 +8164,15 @@ function capacityReport(programId = null) {
           r.author_id, r.author_name, r.submitted_at, r.reviewed_by, r.reviewer_name,
           r.reviewed_at, r.review_comment, r.created_at, r.updated_at);
       }
+      const insProgramReport = db.prepare(`
+        INSERT OR REPLACE INTO program_reports
+        (id, program_id, week_start, title, period, generated_at, generated_by, trigger, markdown, payload, warnings)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const r of b.programReports || []) {
+        insProgramReport.run(r.id, r.program_id, r.week_start, r.title, r.period, r.generated_at,
+          r.generated_by || '系统自动', r.trigger || 'auto', r.markdown || '', r.payload || '{}', r.warnings || '[]');
+      }
       const insGate = db.prepare(`
         INSERT INTO gates (id, project_id, name, phase, planned_date, actual_date, status, reviewer, decision, conditions, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -8106,7 +8242,7 @@ function capacityReport(programId = null) {
     requirePmo(me);
     db.exec('BEGIN');
     try {
-      for (const t of ['events', 'updates', 'allocations', 'risks', 'milestones', 'weekly_reports', 'plans', 'deliverable_revisions', 'deliverable_comments', 'dependencies', 'charters', 'change_requests', 'lessons', 'plan_tasks', 'task_deps', 'benefits', 'actions', 'acceptances', 'gate_checks', 'gates', 'projects', 'programs', 'audit_log']) {
+      for (const t of ['events', 'updates', 'allocations', 'risks', 'milestones', 'weekly_reports', 'program_reports', 'plans', 'deliverable_revisions', 'deliverable_comments', 'dependencies', 'charters', 'change_requests', 'lessons', 'plan_tasks', 'task_deps', 'benefits', 'actions', 'acceptances', 'gate_checks', 'gates', 'projects', 'programs', 'audit_log']) {
         db.exec(`DELETE FROM ${t}; DELETE FROM sqlite_sequence WHERE name = '${t}';`);
       }
       db.exec('COMMIT');
@@ -8151,4 +8287,9 @@ ensureSnapshot();
 
 server.listen(PORT, HOST, () => {
   console.log(`\n  PMO 项目群管理台\n  → http://${HOST}:${PORT}\n  数据文件：${DB_FILE}\n`);
+  try { ensureProgramReports('startup'); } catch (err) { console.error('[report] startup snapshot:', err.message); }
+  const reportTimer = setInterval(() => {
+    try { ensureProgramReports('scheduled'); } catch (err) { console.error('[report] scheduled snapshot:', err.message); }
+  }, 6 * 60 * 60 * 1000);
+  reportTimer.unref();
 });

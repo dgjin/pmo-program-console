@@ -394,6 +394,16 @@ test('报表：周报包含已审核项目摘要', async () => {
   assert.ok(section.bullets.length >= 1);
   assert.ok(section.bullets.every((b) => /（已审核|待审核）：/.test(b)));
   assert.ok(r.json.coverage.approved >= 1);
+  assert.ok(Array.isArray(r.json.history) && r.json.history.length >= 1);
+  assert.ok(Array.isArray(r.json.warnings));
+  const history = r.json.history[0];
+  const detail = await req('GET', `/api/report/history/${history.id}`, { cookie: pmo.cookie });
+  assert.equal(detail.status, 200);
+  assert.equal(detail.json.week_start, history.week_start);
+  assert.ok(Array.isArray(detail.json.sections));
+  const snapshot = await req('POST', '/api/report/snapshot', { cookie: pmo.cookie });
+  assert.equal(snapshot.status, 200);
+  assert.ok(snapshot.json.week_start);
 });
 
 test('报表：项目群计划只取已通过的计划', async () => {
