@@ -1,0 +1,268 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "PMO 项目全流程操作",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "setup",
+        "label": "准备：建群、建项目、排计划",
+        "focus": [
+          "program",
+          "project",
+          "plan",
+          "baseline"
+        ],
+        "note": "先把项目群、双方项目经理、WBS 和基线定下来，再开始按周执行。"
+      },
+      {
+        "id": "run",
+        "label": "执行：周报提交与审核",
+        "focus": [
+          "weekly",
+          "review"
+        ],
+        "note": "周报自动带出本周计划任务，PMO 审核通过或退回修改。"
+      },
+      {
+        "id": "close",
+        "label": "收口：关口、验收与复盘",
+        "focus": [
+          "gate_review",
+          "acceptance"
+        ],
+        "note": "关口必检项完成后再验收；范围或工期变化走变更并重设基线。"
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "pmo",
+      "label": "PMO 治理"
+    },
+    {
+      "id": "vendor",
+      "label": "乙方项目经理"
+    },
+    {
+      "id": "client",
+      "label": "甲方项目经理"
+    }
+  ],
+  "phases": [
+    {
+      "id": "init",
+      "label": "立项",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "plan",
+      "label": "计划与基线",
+      "fromCol": 2,
+      "toCol": 2,
+      "variant": "emphasis"
+    },
+    {
+      "id": "execute",
+      "label": "执行与审核",
+      "fromCol": 3,
+      "toCol": 4
+    },
+    {
+      "id": "accept",
+      "label": "验收与复盘",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "program",
+    "project",
+    "plan",
+    "baseline",
+    "gate_milestone",
+    "weekly",
+    "review",
+    "gate_review",
+    "acceptance"
+  ],
+  "semanticChecks": {
+    "allowedRoots": [
+      "program"
+    ],
+    "allowedTerminals": [
+      "acceptance"
+    ],
+    "requiredEdges": [
+      {
+        "from": "program",
+        "to": "project"
+      },
+      {
+        "from": "project",
+        "to": "plan"
+      },
+      {
+        "from": "plan",
+        "to": "baseline"
+      },
+      {
+        "from": "baseline",
+        "to": "gate_milestone"
+      },
+      {
+        "from": "gate_milestone",
+        "to": "weekly"
+      },
+      {
+        "from": "weekly",
+        "to": "review"
+      },
+      {
+        "from": "review",
+        "to": "gate_review"
+      },
+      {
+        "from": "gate_review",
+        "to": "acceptance"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "program",
+      "lane": "pmo",
+      "col": 0,
+      "type": "backend",
+      "label": "建项目群",
+      "sublabel": "名称 / 负责人 / 目标",
+      "tag": "管理员"
+    },
+    {
+      "id": "project",
+      "lane": "pmo",
+      "col": 1,
+      "type": "frontend",
+      "label": "新建项目",
+      "sublabel": "编号 / 预算 / 周期",
+      "tag": "指定甲乙 PM"
+    },
+    {
+      "id": "plan",
+      "lane": "vendor",
+      "col": 2,
+      "type": "frontend",
+      "label": "排 WBS 计划",
+      "sublabel": "阶段 / 任务 / 负责人",
+      "tag": "工期与依赖"
+    },
+    {
+      "id": "baseline",
+      "lane": "pmo",
+      "col": 2,
+      "type": "database",
+      "label": "设计划基线",
+      "sublabel": "锁定承诺版本",
+      "tag": "后续比偏差"
+    },
+    {
+      "id": "gate_milestone",
+      "lane": "vendor",
+      "col": 3,
+      "type": "security",
+      "label": "设关口 / 里程碑 / 风险",
+      "sublabel": "检查项 + 责任人 + 时间",
+      "tag": "先定规则",
+      "width": 180
+    },
+    {
+      "id": "weekly",
+      "lane": "vendor",
+      "col": 4,
+      "type": "frontend",
+      "label": "提交周报",
+      "sublabel": "自动带入本周计划任务",
+      "tag": "进度只认计划"
+    },
+    {
+      "id": "review",
+      "lane": "pmo",
+      "col": 4,
+      "type": "security",
+      "label": "PMO 审核",
+      "sublabel": "48 小时内通过 / 退回",
+      "tag": "留痕"
+    },
+    {
+      "id": "gate_review",
+      "lane": "pmo",
+      "col": 5,
+      "type": "security",
+      "label": "阶段关口评审",
+      "sublabel": "必检项完成才可通过",
+      "tag": "有条件 / 不通过"
+    },
+    {
+      "id": "acceptance",
+      "lane": "client",
+      "col": 5,
+      "type": "external",
+      "label": "甲方验收 / 收尾",
+      "sublabel": "结论登记 + 复盘归档",
+      "tag": "正式结论",
+      "width": 150
+    }
+  ],
+  "edges": [
+    {
+      "from": "program",
+      "to": "project",
+      "label": "建群后"
+    },
+    {
+      "from": "project",
+      "to": "plan",
+      "label": "指定双方 PM"
+    },
+    {
+      "from": "plan",
+      "to": "baseline",
+      "label": "排完计划",
+      "role": "main"
+    },
+    {
+      "from": "baseline",
+      "to": "gate_milestone",
+      "label": "锁定承诺",
+      "role": "main"
+    },
+    {
+      "from": "gate_milestone",
+      "to": "weekly",
+      "label": "按周执行",
+      "role": "main"
+    },
+    {
+      "from": "weekly",
+      "to": "review",
+      "label": "提交",
+      "role": "main"
+    },
+    {
+      "from": "review",
+      "to": "gate_review",
+      "label": "通过 / 退回重提",
+      "role": "main"
+    },
+    {
+      "from": "gate_review",
+      "to": "acceptance",
+      "label": "通过 / 变更后重设",
+      "role": "main"
+    }
+  ]
+}

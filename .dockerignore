@@ -1,0 +1,8 @@
+data/
+backups/
+dist/
+node_modules/
+docs/preview-*.jpg
+.git/
+.DS_Store
+*.log

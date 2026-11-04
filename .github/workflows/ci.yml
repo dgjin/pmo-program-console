@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      CHROME_BIN: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: API integration tests
+        run: npm test
+      - name: Browser smoke test
+        run: npm run test:ui
+      - name: Security baseline
+        run: npm run test:security
+      - name: Lightweight load test
+        run: npm run test:load

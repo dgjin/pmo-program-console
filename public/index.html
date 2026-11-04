@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>项目群控制台 · PMO</title>
+<meta name="description" content="面向项目群（Program）的 PMO 管理台：组合健康度、里程碑、风险台账、资源负载与周报。" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+<a class="skip-link" href="#view">跳到主要内容</a>
+<div class="grain" aria-hidden="true"></div>
+
+<aside class="rail" id="rail">
+  <div class="rail-head">
+    <div class="mark">
+      <span class="mark-letter">P</span>
+      <span class="mark-lines" aria-hidden="true"></span>
+    </div>
+    <div class="rail-title">
+      <strong>项目群控制台</strong>
+      <span>PROGRAM CONTROL</span>
+    </div>
+    <button class="rail-toggle" id="rail-toggle" type="button" data-action="rail-toggle"
+      aria-controls="rail" aria-expanded="true" aria-label="收起侧栏" title="收起侧栏">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+  </div>
+
+  <div class="rail-program-switch" id="rail-program-switch"></div>
+
+  <nav class="rail-nav" id="rail-nav" aria-label="主导航"></nav>
+
+  <div class="rail-foot">
+    <div class="rail-user" id="rail-user"></div>
+    <div class="rail-program">
+      <span class="mini-label">当前项目群</span>
+      <strong id="rail-program-name">—</strong>
+    </div>
+    <div class="rail-meta">
+      <span id="rail-date">—</span>
+      <span class="rail-live"><i></i>数据已同步</span>
+    </div>
+  </div>
+</aside>
+
+<main class="main" id="main">
+  <div id="view" class="view" tabindex="-1"></div>
+</main>
+
+<div class="toast-stack" id="toasts" aria-live="polite"></div>
+<div class="modal-root" id="modal-root"></div>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

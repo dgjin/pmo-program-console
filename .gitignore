@@ -1,0 +1,13 @@
+data/
+backups/
+dist/
+node_modules/
+.DS_Store
+*.log
+.dsh-edit-review.json
+.env
+*.db
+*.db-wal
+*.db-shm
+.ai-key
+docs/archify-evidence/

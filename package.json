@@ -1,0 +1,19 @@
+{
+  "name": "pmo-program-console",
+  "version": "1.40.0",
+  "private": true,
+  "description": "面向项目群（Program）的 PMO 协作与治理平台：项目填报、PMO 审核、周报与计划自动汇总",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/api.test.js",
+    "backup": "node scripts/backup.js",
+    "test:ui": "node scripts/ui-smoke.mjs",
+    "test:load": "node scripts/load-test.mjs",
+    "test:security": "node scripts/security-check.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "license": "MIT"
+}

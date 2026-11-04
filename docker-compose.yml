@@ -1,0 +1,14 @@
+services:
+  pmo:
+    build: .
+    image: pmo-program-console:1.40.0
+    container_name: pmo
+    ports:
+      - "5177:5177"
+    environment:
+      PMO_HOST: 0.0.0.0
+      PMO_PORT: "5177"
+      PMO_DB: /data/pmo.db
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
