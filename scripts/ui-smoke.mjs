@@ -154,6 +154,8 @@ async function main() {
   if (navCount < 16) throw new Error(`导航项数量不对：${navCount}`);
   if (!(await ev(`Boolean(document.querySelector('#rail-toggle'))`))) throw new Error('没有侧栏收起按钮');
   if ((await ev(`getComputedStyle(document.querySelector('.mark')).transform`)) !== 'none') throw new Error('侧栏 Logo 仍是 3D 透视');
+  if ((await ev(`getComputedStyle(document.querySelector('.btn')).borderRadius`)) === '0px') throw new Error('按钮没有统一圆角');
+  if ((await ev(`getComputedStyle(document.querySelector('.nav-item')).borderRadius`)) === '0px') throw new Error('导航没有统一圆角');
   await ev(`document.querySelector('#rail-toggle').click()`);
   await wait(400);
   if (!(await ev(`document.body.classList.contains('is-rail-collapsed')`))) throw new Error('侧栏没有收起');

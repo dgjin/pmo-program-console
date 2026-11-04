@@ -4033,3 +4033,89 @@ body.is-rail-collapsed .rail-program-switch { display: none; }
   .ai-brief-head { flex-direction: column; gap: 10px; }
   .ai-brief-list { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------- unified radius ---
+   统一的圆角层级：控件 8–10，卡片 14–18，弹窗 20，标签/筛选胶囊。
+   表格内部的分隔线保持直线，避免把台账做成卡片堆。
+   -------------------------------------------------------------------------- */
+
+:root {
+  --r-xs: 6px;
+  --r-sm: 9px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+}
+
+/* buttons / controls */
+.btn { border-radius: var(--r-sm); }
+.btn--sm { border-radius: 7px; }
+.icon-btn { border-radius: 7px; }
+.period-arrow { border-radius: 7px; }
+.rail-toggle, .rail-logout { border-radius: 7px; }
+.filter { border-radius: var(--r-pill); }
+.chip { border-radius: var(--r-pill); }
+.kb-kind { border-radius: var(--r-xs); }
+.dlv-tab { border-radius: 8px 8px 0 0; }
+.dlv-tab:hover { background: var(--surface-2); }
+.gantt-zoom, .dlv-type, .md-view-switch { border-radius: var(--r-sm); overflow: hidden; }
+.gantt-zoom > *, .dlv-type > *, .md-view-switch > * { border-radius: 0; }
+.gantt-zoom > *:first-child, .dlv-type > *:first-child, .md-view-switch > *:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+.gantt-zoom > *:last-child, .dlv-type > *:last-child, .md-view-switch > *:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.md-tool { border-radius: var(--r-xs); }
+
+/* inputs */
+.field input, .field select, .field textarea,
+.ai-form input[type="url"], .ai-form input[type="text"], .ai-form input[type="password"],
+.ai-form select, .help-ai textarea, .ai-ask textarea,
+.meeting-filter select, .global-ai-scope select, .admin-select {
+  border-radius: var(--r-sm);
+}
+.search {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-pill);
+  padding: 5px 12px;
+  background: var(--surface);
+}
+.search input { border-radius: 0; }
+
+/* sidebar navigation */
+.nav-item {
+  margin: 1px 10px;
+  padding-left: 14px;
+  padding-right: 14px;
+  border-left: 0;
+  border-radius: var(--r-sm);
+}
+.nav-item.is-active {
+  border-left: 0;
+  box-shadow: inset 2px 0 0 var(--oxblood);
+}
+.rail-program-switch { border-radius: var(--r-sm); }
+
+/* dialogs / notices / cards */
+.modal { border-radius: var(--r-xl); }
+.toast { border-radius: var(--r-md); }
+.note-box { border-radius: 0 var(--r-md) var(--r-md) 0; }
+.ai-banner { border-radius: 0 var(--r-md) var(--r-md) 0; }
+.ai-sources { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.ai-brief { border-radius: var(--r-lg); }
+.ai-brief-item { border-radius: var(--r-md); }
+.ai-brief-priority { border-radius: var(--r-xs); }
+.login-demo-grid button { border-radius: var(--r-sm); }
+.kb-entry { border-radius: var(--r-sm); }
+.lesson-card { border-radius: var(--r-sm); }
+.change-row { border-radius: var(--r-sm); }
+.side-fact { border-radius: var(--r-xs); }
+
+/* meeting / supplies */
+.meeting-day { border-radius: var(--r-sm); }
+.meeting-timeline { border-radius: var(--r-sm); overflow: hidden; }
+.meeting-block { border-radius: var(--r-sm); }
+.supply-cat { border-radius: var(--r-xs); }
+
+/* markdown / editor surfaces */
+.md-editor { border-radius: var(--r-md); overflow: hidden; }
+.md-toolbar { border-radius: var(--r-md) var(--r-md) 0 0; }
+.md-preview pre { border-radius: var(--r-sm); }
