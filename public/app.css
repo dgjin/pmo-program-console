@@ -4195,3 +4195,13 @@ body.is-rail-collapsed .rail-foot { padding-top: 10px; }
   .rail-program .mini-label { margin-bottom: 3px; }
   .rail-meta { display: none; }
 }
+
+/* 菜单再松一口气：字号不变，只把行距加回来 */
+.nav-item { padding-top: 7px; padding-bottom: 7px; }
+@media (max-height: 820px) {
+  .nav-item { padding-top: 6px; padding-bottom: 6px; }
+}
+
+@media (max-height: 780px) {
+  .nav-item { padding-top: 5px; padding-bottom: 5px; }
+}

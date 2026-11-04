@@ -1,6 +1,6 @@
 {
   "name": "pmo-program-console",
-  "version": "1.46.0",
+  "version": "1.47.0",
   "private": true,
   "description": "面向项目群（Program）的 PMO 协作与治理平台：项目填报、PMO 审核、周报与计划自动汇总",
   "main": "server.js",

@@ -159,6 +159,9 @@ async function main() {
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 800, deviceScaleFactor: 1, mobile: false });
   await wait(350);
   if ((await ev(`document.querySelector('.rail').scrollHeight`)) > (await ev(`document.querySelector('.rail').clientHeight`)) + 1) throw new Error('800px 高度下侧栏出现滚动');
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 768, deviceScaleFactor: 1, mobile: false });
+  await wait(350);
+  if ((await ev(`document.querySelector('.rail').scrollHeight`)) > (await ev(`document.querySelector('.rail').clientHeight`)) + 1) throw new Error('768px 高度下侧栏出现滚动');
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await wait(250);
   if ((await ev(`getComputedStyle(document.querySelector('.mark')).transform`)) !== 'none') throw new Error('侧栏 Logo 仍是 3D 透视');
