@@ -57,6 +57,8 @@ const state = {
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
+let helpSearchTimer = null;
+let helpSearchComposing = false;
 
 /** 安全转义：所有来自数据库的文本都必须走这里 */
 function esc(v) {
@@ -5162,7 +5164,7 @@ async function viewHelp() {
   </details>`).join('') : '<div class="empty">没有找到匹配的文章。换个关键词，或切到「智能问答」直接问。</div>';
 
   const tabs = `<div class="dlv-tabs help-tabs" role="tablist" aria-label="帮助视图">
-    <button class="dlv-tab${tab === 'kb' ? ' is-on' : ''}" role="tab" aria-selected="${tab === 'kb'}" data-action="help-tab" data-value="kb">知识库<span class="n">${data.articles.length}</span></button>
+    <button class="dlv-tab${tab === 'kb' ? ' is-on' : ''}" role="tab" aria-selected="${tab === 'kb'}" data-action="help-tab" data-value="kb">知识库<span class="n">${data.total ?? data.articles.length}</span></button>
     <button class="dlv-tab${tab === 'ai' ? ' is-on' : ''}" role="tab" aria-selected="${tab === 'ai'}" data-action="help-tab" data-value="ai">智能问答</button>
   </div>`;
 
@@ -5170,13 +5172,16 @@ async function viewHelp() {
     <main>
       <div class="help-search">
         ${ICONS.search}
-        <input id="help-search" type="search" value="${esc(q)}" placeholder="搜索：周报、关口、供应商、模板、AI……" aria-label="搜索帮助" />
+        <input id="help-search" type="search" autocomplete="off" value="${esc(q)}" placeholder="搜索：周报、关口、供应商、会议室、办公用品……" aria-label="搜索帮助" />
         <button class="btn btn--solid btn--sm" data-action="help-search">搜索</button>
+      </div>
+      <div class="help-search-meta" aria-live="polite">
+        ${q ? `<span>“${esc(q)}” 找到 <b>${articles.length}</b> 篇</span><button class="help-search-clear" data-action="help-search-clear">清空搜索</button>` : `<span>共 <b>${articles.length}</b> 篇帮助；输入关键词后按 Enter 或点搜索</span>`}
       </div>
       <div class="filters" style="margin:14px 0 18px">
         ${['全部', ...(data.categories || [])].map((c) => `<button class="filter${category === c ? ' is-on' : ''}" data-action="help-category" data-value="${esc(c)}">${esc(c)}</button>`).join('')}
       </div>
-      <div class="help-list">${artHtml}</div>
+      <div class="help-list">${artHtml || `<div class="help-empty"><b>没有找到“${esc(q)}”</b><p>换一个词试试，比如“周报”“会议室”“办公用品”“审批”。</p><button class="btn btn--sm btn--quiet" data-action="help-search-clear">清空搜索</button></div>`}</div>
     </main>
   </div>`;
 
@@ -5209,6 +5214,13 @@ function renderHelpMessages() {
       ${!m.pending ? `<div class="chat-meta"><span>${m.fallback ? '知识库检索' : `模型 ${esc(m.model || '')}`}</span>${m.sources?.length ? `<span class="chat-sources">参考：${m.sources.map((s) => `<span class="chip">${esc(s.title)}</span>`).join(' ')}</span>` : ''}</div>` : ''}
     </div></div>`;
   }).join('');
+}
+
+function focusHelpSearch() {
+  const input = document.getElementById('help-search');
+  if (!input) return;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
 }
 
 function helpAIHTML(ai) {
@@ -6574,9 +6586,18 @@ async function handleAction(action, el) {
       await render();
       break;
     case 'help-search':
+      if (helpSearchTimer) { clearTimeout(helpSearchTimer); helpSearchTimer = null; }
       state.help.q = document.getElementById('help-search')?.value.trim() || '';
       state.help.tab = 'kb';
       await render();
+      focusHelpSearch();
+      break;
+    case 'help-search-clear':
+      if (helpSearchTimer) { clearTimeout(helpSearchTimer); helpSearchTimer = null; }
+      state.help.q = '';
+      state.help.tab = 'kb';
+      await render();
+      focusHelpSearch();
       break;
     case 'help-category':
       state.help.category = el.dataset.value || '全部';
@@ -7299,6 +7320,33 @@ document.addEventListener('input', (e) => {
     state.userFilters.q = e.target.value;
     refreshAdminUserRows();
   }
+  if (e.target.id === 'help-search') {
+    if (helpSearchComposing) return;
+    state.help.q = e.target.value.trim();
+    if (helpSearchTimer) clearTimeout(helpSearchTimer);
+    helpSearchTimer = setTimeout(async () => {
+      helpSearchTimer = null;
+      if (state.route !== 'help' || state.help.tab !== 'kb') return;
+      await render();
+      focusHelpSearch();
+    }, 420);
+  }
+});
+
+document.addEventListener('compositionstart', (e) => {
+  if (e.target.id === 'help-search') helpSearchComposing = true;
+});
+document.addEventListener('compositionend', (e) => {
+  if (e.target.id !== 'help-search') return;
+  helpSearchComposing = false;
+  state.help.q = e.target.value.trim();
+  if (helpSearchTimer) clearTimeout(helpSearchTimer);
+  helpSearchTimer = setTimeout(async () => {
+    helpSearchTimer = null;
+    if (state.route !== 'help' || state.help.tab !== 'kb') return;
+    await render();
+    focusHelpSearch();
+  }, 80);
 });
 
 document.addEventListener('change', async (e) => {
@@ -7370,6 +7418,11 @@ window.addEventListener('beforeunload', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (modalCloser) closeModal();
+  }
+  if (e.key === 'Enter' && e.target?.id === 'help-search' && !e.isComposing) {
+    e.preventDefault();
+    if (helpSearchTimer) { clearTimeout(helpSearchTimer); helpSearchTimer = null; }
+    document.querySelector('[data-action="help-search"]')?.click();
   }
 });
 

@@ -229,6 +229,16 @@ async function main() {
   if ((await ev(`document.querySelectorAll('.help-article').length`)) < 10) throw new Error('帮助知识库没有渲染');
   if (!(await ev(`Boolean(document.querySelector('a[href="/help/project-workflow.html"]'))`))) throw new Error('完整流程图入口没有渲染');
   await auditPage('帮助页');
+  await ev(`(() => { const i=document.querySelector('#help-search'); i.value='办公用品'; i.dispatchEvent(new Event('input',{bubbles:true})); return true; })()`);
+  await wait(800);
+  if ((await ev(`document.querySelectorAll('.help-article').length`)) < 1) throw new Error('帮助实时搜索没有结果');
+  if (!/找到/.test(await ev(`document.querySelector('.help-search-meta')?.innerText || ''`))) throw new Error('帮助搜索没有显示结果数');
+  await ev(`(() => { const i=document.querySelector('#help-search'); i.value='会议室'; i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); return true; })()`);
+  await wait(700);
+  if (!(await ev(`document.querySelector('.help-article summary b')?.textContent || ''`)).includes('会议室')) throw new Error('帮助搜索 Enter 没有生效');
+  await ev(`document.querySelector('[data-action="help-search-clear"]')?.click()`);
+  await wait(500);
+  if ((await ev(`document.querySelectorAll('.help-article').length`)) < 10) throw new Error('帮助搜索清空后没有恢复');
   await ev(`document.querySelector('[data-action="help-tab"][data-value="ai"]')?.click()`);
   await wait(500);
   if (!(await ev(`Boolean(document.querySelector('.help-ai-page'))`))) throw new Error('智能问答页签没有渲染');

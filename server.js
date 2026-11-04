@@ -5868,7 +5868,8 @@ async function handleApi(req, res, u) {
     const rows = q ? helpSearch(q, 20) : db.prepare('SELECT * FROM help_articles WHERE published = 1 ORDER BY category, id').all();
     const filtered = category ? rows.filter((x) => x.category === category) : rows;
     const categories = [...new Set(db.prepare('SELECT DISTINCT category FROM help_articles WHERE published = 1').all().map((x) => x.category))];
-    return json(res, { articles: filtered, categories, query: q });
+    const total = db.prepare('SELECT COUNT(*) AS n FROM help_articles WHERE published = 1').get().n;
+    return json(res, { articles: filtered, categories, query: q, total });
   }
 
   if (method === 'POST' && p === '/api/help/ask') {

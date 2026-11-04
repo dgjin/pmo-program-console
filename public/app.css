@@ -4205,3 +4205,43 @@ body.is-rail-collapsed .rail-foot { padding-top: 10px; }
 @media (max-height: 780px) {
   .nav-item { padding-top: 5px; padding-bottom: 5px; }
 }
+
+/* 帮助搜索：胶囊输入框 + 结果计数 + 空结果 */
+.help-search {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  padding: 6px 12px;
+}
+.kb-toolbar .help-search {
+  border: 1px solid var(--rule);
+  padding: 6px 12px;
+}
+.help-search input { padding: 4px 0; }
+.help-search-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.help-search-meta b { font-family: var(--mono); font-weight: 500; color: var(--ink); }
+.help-search-clear {
+  border: 0;
+  background: transparent;
+  color: var(--oxblood);
+  font-size: 10.5px;
+  cursor: pointer;
+  padding: 2px 0;
+  white-space: nowrap;
+}
+.help-search-clear:hover { text-decoration: underline; }
+.help-empty {
+  padding: 44px 0;
+  text-align: center;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.help-empty b { font-size: 15px; font-weight: 500; }
+.help-empty p { margin: 7px 0 14px; color: var(--ink-3); font-size: 12px; }
