@@ -8,7 +8,7 @@
     "views": [
       {
         "id": "setup",
-        "label": "准备：建群、建项目、排计划",
+        "label": "准备：建群与计划",
         "focus": [
           "program",
           "project",
@@ -19,7 +19,7 @@
       },
       {
         "id": "run",
-        "label": "执行：周报提交与审核",
+        "label": "执行：周报与审核",
         "focus": [
           "weekly",
           "review"
@@ -28,12 +28,22 @@
       },
       {
         "id": "close",
-        "label": "收口：关口、验收与复盘",
+        "label": "收口：关口与验收",
         "focus": [
           "gate_review",
           "acceptance"
         ],
         "note": "关口必检项完成后再验收；范围或工期变化走变更并重设基线。"
+      },
+      {
+        "id": "collab",
+        "label": "协作：会议与用品",
+        "focus": [
+          "collab_request",
+          "collab_approve",
+          "collab_exec"
+        ],
+        "note": "项目执行期间可发起会议室预订或办公用品领用；审批人不能是申请人，通过后会议进入日历、用品发放并扣库存。"
       }
     ]
   },
@@ -45,6 +55,10 @@
     {
       "id": "vendor",
       "label": "乙方项目经理"
+    },
+    {
+      "id": "collab",
+      "label": "日常协作"
     },
     {
       "id": "client",
@@ -129,6 +143,22 @@
       {
         "from": "gate_review",
         "to": "acceptance"
+      },
+      {
+        "from": "gate_milestone",
+        "to": "collab_request"
+      },
+      {
+        "from": "collab_request",
+        "to": "collab_approve"
+      },
+      {
+        "from": "collab_approve",
+        "to": "collab_exec"
+      },
+      {
+        "from": "collab_exec",
+        "to": "weekly"
       }
     ]
   },
@@ -215,6 +245,36 @@
       "sublabel": "结论登记 + 复盘归档",
       "tag": "正式结论",
       "width": 150
+    },
+    {
+      "id": "collab_request",
+      "lane": "collab",
+      "col": 3,
+      "type": "frontend",
+      "label": "会议室 / 用品申请",
+      "sublabel": "选时段 / 选物品 / 关联项目",
+      "tag": "所有角色",
+      "width": 170
+    },
+    {
+      "id": "collab_approve",
+      "lane": "collab",
+      "col": 4,
+      "type": "security",
+      "label": "审批人处理",
+      "sublabel": "按设置：PMO / 审批员",
+      "tag": "不能自批",
+      "width": 165
+    },
+    {
+      "id": "collab_exec",
+      "lane": "collab",
+      "col": 5,
+      "type": "database",
+      "label": "日历生效 / 发放扣库存",
+      "sublabel": "会议进日历 / 库存扣减",
+      "tag": "通过后生效",
+      "width": 170
     }
   ],
   "edges": [
@@ -263,6 +323,38 @@
       "to": "acceptance",
       "label": "通过 / 变更后重设",
       "role": "main"
+    },
+    {
+      "from": "gate_milestone",
+      "to": "collab_request",
+      "label": "执行期随时",
+      "role": "branch"
+    },
+    {
+      "from": "collab_request",
+      "to": "collab_approve",
+      "label": "提交",
+      "role": "main"
+    },
+    {
+      "from": "collab_approve",
+      "to": "collab_exec",
+      "label": "通过",
+      "role": "main"
+    },
+    {
+      "from": "collab_approve",
+      "to": "collab_request",
+      "label": "退回补充",
+      "role": "return",
+      "variant": "dashed"
+    },
+    {
+      "from": "collab_exec",
+      "to": "weekly",
+      "label": "回到执行",
+      "role": "return",
+      "variant": "dashed"
     }
   ]
 }

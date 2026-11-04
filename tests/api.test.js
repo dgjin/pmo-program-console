@@ -1347,6 +1347,7 @@ test('帮助中心、知识库与项目 AI 降级', async () => {
 
   const flow = await req('GET', '/api/help?q=完整操作流程', { cookie: admin.cookie });
   assert.ok(flow.json.articles.some((a) => a.slug === 'project-full-flow'));
+  assert.match(flow.json.articles.find((a) => a.slug === 'project-full-flow').summary, /会议室/);
   const flowHtml = await req('GET', '/help/project-workflow.html');
   assert.equal(flowHtml.status, 200);
   assert.match(String(flowHtml.json), /PMO/);
