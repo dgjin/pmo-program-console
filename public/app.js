@@ -909,11 +909,65 @@ function workflowBar() {
   </a>`;
 }
 
-function viewOverview() {
+function overviewAIHTML(brief, projects) {
+  if (!brief) return '';
+  const picked = [];
+  const seen = new Set();
+  for (const x of brief.items || []) {
+    if (seen.has(x.project_id)) continue;
+    seen.add(x.project_id);
+    picked.push(x);
+    if (picked.length >= 6) break;
+  }
+  const items = picked;
+  return `<section class="panel overview-ai" aria-labelledby="overview-ai-title">
+    <div class="panel-head">
+      <h2 id="overview-ai-title"><span class="no">AI</span>项目群助手 · 当前要处理</h2>
+      <span class="hint">${esc(brief.summary || '')}</span>
+    </div>
+    <div class="overview-ai-grid">
+      <div>
+        <div class="overview-ai-list">
+          ${items.length ? items.map((x) => `<a class="overview-ai-item overview-ai-item--${esc(x.level)}" href="#/projects/${x.project_id}/ai">
+            <span class="overview-ai-priority">${esc(x.priority)}</span>
+            <span class="overview-ai-body">
+              <span class="overview-ai-meta">${esc(x.project_code)} · ${esc(x.category)} · ${esc((x.audience || []).join(' / '))} · ${esc(briefDueLabel(x.due_date))}</span>
+              <b>${esc(x.title)}</b>
+              <span class="overview-ai-detail">${esc(x.detail)}</span>
+              <span class="overview-ai-go">打开项目 AI →</span>
+            </span>
+          </a>`).join('') : '<div class="help-empty"><b>当前没有明显待办</b><p>各项目的周报、计划、关口和风险暂时没有需要立即处理的事项。</p></div>'}
+        </div>
+        <p class="dlv-note">按项目当前数据汇总 P0/P1 优先事项；点一条进入对应项目的 AI 助手。</p>
+      </div>
+      <div class="overview-ai-console">
+        <div class="panel-head"><h3>就地提问</h3><span class="hint">选一个项目</span></div>
+        <label class="overview-ai-select">项目
+          <select id="overview-ai-project" aria-label="选择项目">
+            ${projects.map((p) => `<option value="${p.id}">${esc(p.code)} ${esc(p.name)}</option>`).join('')}
+          </select>
+        </label>
+        <div class="overview-ai-buttons">
+          <button class="btn btn--sm btn--quiet" data-action="overview-ai-run" data-mode="actions">现在该做什么</button>
+          <button class="btn btn--sm btn--quiet" data-action="overview-ai-run" data-mode="summary">项目摘要</button>
+          <button class="btn btn--sm btn--quiet" data-action="overview-ai-run" data-mode="risks">风险建议</button>
+          <button class="btn btn--sm btn--quiet" data-action="overview-ai-run" data-mode="weekly">周报草稿</button>
+        </div>
+        <textarea id="overview-ai-question" rows="3" aria-label="向项目 AI 提问" placeholder="问这个项目，例如：当前最该盯的三件事是什么？"></textarea>
+        <button class="btn btn--sm btn--solid overview-ai-ask" data-action="overview-ai-ask">提问</button>
+        <div id="overview-ai-result" class="md-preview overview-ai-result" aria-live="polite"><p class="md-empty">选一个项目，先看摘要、风险或直接提问。生成结果不会自动写入。</p></div>
+      </div>
+    </div>
+  </section>`;
+}
+
+async function viewOverview() {
   const d = state.data;
   const s = d.stats;
   const projects = d.projects;
   const program = d.program;
+  let overviewAI = null;
+  try { overviewAI = await api('/api/overview/ai'); } catch { overviewAI = null; }
   const percent = (x) => Math.round(x * 100);
 
   const week = weekOfYear(parse(today()));
@@ -1121,6 +1175,7 @@ function viewOverview() {
     })}
     ${pulse}
     ${workflowBar()}
+    ${overviewAIHTML(overviewAI, projects)}
 
     <div class="split">
       <section class="panel">
@@ -5409,6 +5464,21 @@ function projectAISourcesHTML(result) {
   return `<div class="ai-sources"><span>知识库引用</span>${result.sources.map((s) => `<span class="chip">${esc(s.kind_label)} · ${esc(s.title)}</span>`).join('')}</div>`;
 }
 
+async function runOverviewAI(mode, question = '') {
+  const sel = document.getElementById('overview-ai-project');
+  const projectId = Number(sel?.value || 0);
+  const box = document.getElementById('overview-ai-result');
+  if (!projectId || !box) { toast('先选一个项目', 'err'); return; }
+  box.innerHTML = '<p class="md-empty">生成中…</p>';
+  try {
+    const r = await api(`/api/projects/${projectId}/ai`, { method: 'POST', body: { mode, question } });
+    box.innerHTML = `${renderMarkdown(r.answer)}<div class="overview-ai-result-foot"><span>${r.fallback ? '本地规则结果' : `模型 ${esc(r.model || '')}`}</span><button class="btn btn--sm btn--quiet" data-action="overview-ai-open" data-id="${projectId}">打开项目 AI →</button></div>`;
+  } catch (e) {
+    box.innerHTML = `<p class="md-empty">${esc(e.message)}</p>`;
+    toast(e.message, 'err');
+  }
+}
+
 function briefDueLabel(date) {
   if (!date) return '无明确截止';
   const base = state.data?.today || new Date().toISOString().slice(0, 10);
@@ -5986,7 +6056,7 @@ async function render() {
   const v = $('#view');
   let html = '';
   switch (state.route) {
-    case 'overview': html = viewOverview(); break;
+    case 'overview': html = await viewOverview(); break;
     case 'my-tasks': html = viewMyTasks(); break;
     case 'projects': html = viewProjects(); break;
     case 'timeline': html = viewTimeline(); break;
@@ -7181,6 +7251,18 @@ async function handleAction(action, el) {
       state.filters.riskCell = null;
       render();
       break;
+    case 'overview-ai-run':
+      await runOverviewAI(el.dataset.mode || 'summary');
+      break;
+    case 'overview-ai-ask': {
+      const q = String(document.getElementById('overview-ai-question')?.value || '').trim();
+      if (!q) { toast('先写一个问题', 'err'); break; }
+      await runOverviewAI('ask', q);
+      break;
+    }
+    case 'overview-ai-open':
+      window.location.hash = `#/projects/${el.dataset.id}/ai`;
+      break;
     case 'report-copy': {
       const text = state.reportSnapshot?.markdown || state.report?.markdown || '';
       try {
@@ -7456,6 +7538,11 @@ document.addEventListener('change', async (e) => {
       if (e.target.value === 'client_member') party.value = '甲方';
       if (e.target.value === 'vendor_member') party.value = '乙方';
     }
+    return;
+  }
+  if (e.target.id === 'overview-ai-project') {
+    const box = document.getElementById('overview-ai-result');
+    if (box) box.innerHTML = '<p class="md-empty">选一个动作用这个项目生成，或直接输入问题。</p>';
     return;
   }
   if (e.target.id === 'meeting-room-filter') {

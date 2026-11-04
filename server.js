@@ -1887,6 +1887,8 @@ PMO 在「用品管理」里：
 
 项目页 →「AI 助手」，最上面是「当前要处理」清单。它不是模型编的，是按项目当前数据算出来的，刷新页面就会更新。
 
+项目群总览也有一块「项目群助手 · 当前要处理」：左边按项目汇总 P0/P1 待办，右边选一个项目，可以直接做摘要、风险建议、周报草稿或提问。
+
 ## 清单怎么来的
 
 - 周报：本周没提交、还是草稿、被退回、待 PMO 审核。
@@ -1956,6 +1958,11 @@ function seedHelp() {
     if (seed && row && !String(row.content_md).includes('不能审批自己')) {
       db.prepare('UPDATE help_articles SET content_md = ?, updated_at = ? WHERE id = ?').run(seed[4], now, row.id);
     }
+  }
+  const projectAIHelp = HELP_SEEDS.find(([slug]) => slug === 'project-ai-actions');
+  const projectAIRow = db.prepare("SELECT id, content_md FROM help_articles WHERE slug = 'project-ai-actions'").get();
+  if (projectAIHelp && projectAIRow && !String(projectAIRow.content_md).includes('项目群总览也有一块')) {
+    db.prepare('UPDATE help_articles SET content_md = ?, updated_at = ? WHERE id = ?').run(projectAIHelp[4], now, projectAIRow.id);
   }
   const fullFlow = HELP_SEEDS.find(([slug]) => slug === 'project-full-flow');
   const fullFlowRow = db.prepare("SELECT id, content_md FROM help_articles WHERE slug = 'project-full-flow'").get();
@@ -7616,6 +7623,39 @@ function capacityReport(programId = null) {
       audit(me, '拒绝会议室预订', 'room_booking', id, cur.project_id, cur.title);
     }
     return json(res, { ok: true });
+  }
+
+  if (method === 'GET' && p === '/api/overview/ai') {
+    const programId = resolveProgramId(req, me);
+    const full = filterModelForProgram(buildModel(), programId);
+    const model = filterModelForUser(full, me);
+    const rank = { high: 0, medium: 1, low: 2 };
+    const projects = [];
+    const items = [];
+    for (const p of model.projects) {
+      const rows = projectActionItems(p.id, me);
+      projects.push({
+        id: p.id, code: p.code, name: p.name, stage: p.stage, progress: p.progress,
+        total: rows.length,
+        high: rows.filter((x) => x.level === 'high').length,
+      });
+      for (const x of rows) {
+        items.push({ ...x, project_id: p.id, project_code: p.code, project_name: p.name });
+      }
+    }
+    items.sort((a, b) => rank[a.level] - rank[b.level] || String(a.due_date || '9999-12-31').localeCompare(String(b.due_date || '9999-12-31')));
+    const counts = {
+      total: items.length,
+      high: items.filter((x) => x.level === 'high').length,
+      medium: items.filter((x) => x.level === 'medium').length,
+      low: items.filter((x) => x.level === 'low').length,
+    };
+    return json(res, {
+      generated_at: new Date().toISOString(),
+      program: { id: programId, code: full.program?.code || '', name: full.program?.name || '' },
+      projects, items: items.slice(0, 30), counts,
+      summary: counts.high ? `${counts.high} 项需要优先处理，${counts.medium} 项本周跟进。` : counts.medium ? `${counts.medium} 项本周跟进。` : '当前没有明显待办。',
+    });
   }
 
   if (method === 'GET' && p === '/api/report') {

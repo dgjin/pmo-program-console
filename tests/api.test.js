@@ -1358,6 +1358,17 @@ test('项目成员角色：甲方/乙方成员只读且按项目分配', async (
   assert.ok(vendorBrief.json.items.every((x) => x.audience.includes('项目经理') || x.audience.includes('双方')));
 });
 
+test('项目群总览 AI：聚合各项目当前待办', async () => {
+  const admin = await login('pmo', 'pmo123456');
+  const r = await req('GET', '/api/overview/ai', { cookie: admin.cookie });
+  assert.equal(r.status, 200);
+  assert.ok(r.json.projects.length >= 1);
+  assert.ok(r.json.items.length >= 1);
+  assert.ok(r.json.items.every((x) => x.project_id && x.project_code && x.title && x.priority));
+  assert.ok(['P0', 'P1', 'P2'].includes(r.json.items[0].priority));
+  assert.ok(r.json.counts.total >= r.json.items.length);
+});
+
 test('项目 AI 行动清单：按现状生成待办并支持行动建议', async () => {
   const admin = await login('pmo', 'pmo123456');
   const brief = await req('GET', '/api/projects/1/ai/brief', { cookie: admin.cookie });

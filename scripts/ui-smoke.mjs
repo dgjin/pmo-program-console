@@ -181,6 +181,11 @@ async function main() {
   await send('Page.navigate', { url: `${BASE}/?smoke=3#/overview` });
   await wait(1400);
   if (!(await ev(`Boolean(document.querySelector('.score-list'))`))) throw new Error('总览组合优先级没有渲染');
+  if (!(await ev(`Boolean(document.querySelector('.overview-ai'))`))) throw new Error('总览 AI 助手没有渲染');
+  if ((await ev(`document.querySelectorAll('.overview-ai-item').length`)) < 1) throw new Error('总览 AI 没有聚合待办');
+  await ev(`document.querySelector('[data-action="overview-ai-run"][data-mode="summary"]')?.click()`);
+  await wait(900);
+  if (!/项目摘要|核心业务|客户咨询/.test(await ev(`document.querySelector('#overview-ai-result')?.innerText || ''`))) throw new Error('总览 AI 摘要没有返回');
   await auditPage('总览');
 
   await send('Page.navigate', { url: `${BASE}/?smoke=4#/projects/1/value` });
