@@ -201,6 +201,16 @@ async function main() {
   await wait(1200);
   if ((await ev(`document.querySelectorAll('.kb-entry').length`)) < 5) throw new Error('项目知识库没有渲染');
   await auditPage('项目知识库页');
+  await ev(`(() => { const i=document.querySelector('#kb-search'); i.value='周报'; i.dispatchEvent(new Event('input',{bubbles:true})); return true; })()`);
+  await wait(800);
+  if ((await ev(`document.querySelectorAll('.kb-entry').length`)) < 1) throw new Error('项目知识库实时搜索没有结果');
+  if (!/找到/.test(await ev(`document.querySelector('.help-search-meta')?.innerText || ''`))) throw new Error('项目知识库搜索没有显示结果数');
+  await ev(`(() => { const i=document.querySelector('#kb-search'); i.value='周报'; i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); return true; })()`);
+  await wait(700);
+  if ((await ev(`document.querySelectorAll('.kb-entry').length`)) < 1) throw new Error('项目知识库 Enter 搜索没有结果');
+  await ev(`document.querySelector('[data-action="kb-search-clear"]')?.click()`);
+  await wait(600);
+  if ((await ev(`document.querySelectorAll('.kb-entry').length`)) < 5) throw new Error('项目知识库清空搜索后没有恢复');
 
   await send('Page.navigate', { url: `${BASE}/?smoke=7#/write/weekly/1/2026-11-02` });
   await wait(1200);

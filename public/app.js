@@ -59,6 +59,8 @@ const state = {
 const $ = (sel, root = document) => root.querySelector(sel);
 let helpSearchTimer = null;
 let helpSearchComposing = false;
+let projectKBSearchTimer = null;
+let projectKBSearchComposing = false;
 
 /** 安全转义：所有来自数据库的文本都必须走这里 */
 function esc(v) {
@@ -5294,7 +5296,7 @@ function projectKBHTML(p, kb, canManage) {
   const labels = kb.kind_labels || {};
   const kinds = Object.keys(kb.counts || {}).sort((a, b) => (labels[a] || a).localeCompare(labels[b] || b));
   const entries = kb.entries || [];
-  const list = entries.length ? entries.map((e) => `<details class="kb-entry">
+  const list = entries.length ? entries.map((e, i) => `<details class="kb-entry" ${i === 0 && f.q ? 'open' : ''}>
     <summary>
       <span class="kb-kind kb-kind--${esc(e.kind)}">${esc(e.kind_label)}</span>
       <b>${esc(e.title)}</b>
@@ -5309,7 +5311,7 @@ function projectKBHTML(p, kb, canManage) {
         ${e.editable && canManage ? `<button class="btn btn--sm btn--quiet" data-action="kb-note-edit" data-id="${e.id}">编辑</button><button class="btn btn--sm btn--quiet" data-action="kb-note-del" data-id="${e.id}">删除</button>` : ''}
       </span>
     </div>
-  </details>`).join('') : `<div class="empty">${f.q || f.kind ? '没有匹配的知识条目。换个关键词或分类。' : '这个项目还没有可索引的内容。'}</div>`;
+  </details>`).join('') : '';
 
   return `<div class="kb-page">
     <header class="kb-hero">
@@ -5330,11 +5332,14 @@ function projectKBHTML(p, kb, canManage) {
       </div>
       ${canManage ? `<button class="btn btn--quiet btn--sm" data-action="kb-note-new">${ICONS.plus}新增笔记</button>` : ''}
     </div>
+    <div class="help-search-meta" aria-live="polite">
+      ${f.q ? `<span>“${esc(f.q)}” 找到 <b>${entries.length}</b> 条</span><button class="help-search-clear" data-action="kb-search-clear">清空搜索</button>` : `<span>共 <b>${kb.total}</b> 条知识；输入关键词后按 Enter 或点搜索</span>`}
+    </div>
     <div class="filters kb-filters">
       <button class="filter${!f.kind ? ' is-on' : ''}" data-action="kb-kind" data-value="">全部 ${kb.total}</button>
       ${kinds.map((k) => `<button class="filter${f.kind === k ? ' is-on' : ''}" data-action="kb-kind" data-value="${k}">${esc(labels[k] || k)} ${kb.counts[k]}</button>`).join('')}
     </div>
-    <div class="kb-list">${list}</div>
+    <div class="kb-list">${list || `<div class="help-empty"><b>${f.q ? `没有找到“${esc(f.q)}”` : '这个分类下还没有内容'}</b><p>${f.q ? '换一个词试试，或切回“全部”类别。' : '切回“全部”，或者等计划、周报、风险等数据产生后自动索引。'}</p>${f.q ? '<button class="btn btn--sm btn--quiet" data-action="kb-search-clear">清空搜索</button>' : ''}</div>`}</div>
     <p class="dlv-note">自动索引在打开页面时按当前数据生成，不额外维护副本。手工笔记只有 PMO 和乙方项目经理能编辑，甲方只读。生成时间：${fmtDateTime(kb.generated_at)}</p>
   </div>`;
 }
@@ -5368,6 +5373,13 @@ function openProjectKBNote(note = null) {
       toast(isEdit ? '笔记已更新' : '笔记已新增');
     },
   });
+}
+
+function focusProjectKBSearch() {
+  const input = document.getElementById('kb-search');
+  if (!input) return;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
 }
 
 function projectAISourcesHTML(result) {
@@ -6536,10 +6548,19 @@ async function handleAction(action, el) {
       await render();
       break;
     case 'kb-search':
+      if (projectKBSearchTimer) { clearTimeout(projectKBSearchTimer); projectKBSearchTimer = null; }
       state.projectKBFilter.q = document.getElementById('kb-search')?.value.trim() || '';
       await render();
+      focusProjectKBSearch();
+      break;
+    case 'kb-search-clear':
+      if (projectKBSearchTimer) { clearTimeout(projectKBSearchTimer); projectKBSearchTimer = null; }
+      state.projectKBFilter.q = '';
+      await render();
+      focusProjectKBSearch();
       break;
     case 'kb-kind':
+      if (projectKBSearchTimer) { clearTimeout(projectKBSearchTimer); projectKBSearchTimer = null; }
       state.projectKBFilter.kind = el.dataset.value || '';
       await render();
       break;
@@ -7331,22 +7352,46 @@ document.addEventListener('input', (e) => {
       focusHelpSearch();
     }, 420);
   }
+  if (e.target.id === 'kb-search') {
+    if (projectKBSearchComposing) return;
+    state.projectKBFilter.q = e.target.value.trim();
+    if (projectKBSearchTimer) clearTimeout(projectKBSearchTimer);
+    projectKBSearchTimer = setTimeout(async () => {
+      projectKBSearchTimer = null;
+      if (state.route !== 'project' || state.params.tab !== 'kb') return;
+      await render();
+      focusProjectKBSearch();
+    }, 420);
+  }
 });
 
 document.addEventListener('compositionstart', (e) => {
   if (e.target.id === 'help-search') helpSearchComposing = true;
+  if (e.target.id === 'kb-search') projectKBSearchComposing = true;
 });
 document.addEventListener('compositionend', (e) => {
-  if (e.target.id !== 'help-search') return;
-  helpSearchComposing = false;
-  state.help.q = e.target.value.trim();
-  if (helpSearchTimer) clearTimeout(helpSearchTimer);
-  helpSearchTimer = setTimeout(async () => {
-    helpSearchTimer = null;
-    if (state.route !== 'help' || state.help.tab !== 'kb') return;
-    await render();
-    focusHelpSearch();
-  }, 80);
+  if (e.target.id === 'help-search') {
+    helpSearchComposing = false;
+    state.help.q = e.target.value.trim();
+    if (helpSearchTimer) clearTimeout(helpSearchTimer);
+    helpSearchTimer = setTimeout(async () => {
+      helpSearchTimer = null;
+      if (state.route !== 'help' || state.help.tab !== 'kb') return;
+      await render();
+      focusHelpSearch();
+    }, 80);
+  }
+  if (e.target.id === 'kb-search') {
+    projectKBSearchComposing = false;
+    state.projectKBFilter.q = e.target.value.trim();
+    if (projectKBSearchTimer) clearTimeout(projectKBSearchTimer);
+    projectKBSearchTimer = setTimeout(async () => {
+      projectKBSearchTimer = null;
+      if (state.route !== 'project' || state.params.tab !== 'kb') return;
+      await render();
+      focusProjectKBSearch();
+    }, 80);
+  }
 });
 
 document.addEventListener('change', async (e) => {
@@ -7423,6 +7468,11 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (helpSearchTimer) { clearTimeout(helpSearchTimer); helpSearchTimer = null; }
     document.querySelector('[data-action="help-search"]')?.click();
+  }
+  if (e.key === 'Enter' && e.target?.id === 'kb-search' && !e.isComposing) {
+    e.preventDefault();
+    if (projectKBSearchTimer) { clearTimeout(projectKBSearchTimer); projectKBSearchTimer = null; }
+    document.querySelector('[data-action="kb-search"]')?.click();
   }
 });
 
