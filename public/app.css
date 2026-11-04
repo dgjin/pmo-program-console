@@ -4167,3 +4167,31 @@ body.is-rail-collapsed .rail-foot { padding-top: 10px; }
   .rail-head { padding-bottom: 10px; }
   .rail-foot { padding-top: 8px; }
 }
+
+/* 侧栏字号回调：压缩的是间距，不是可读性 */
+.nav-item .lbl { font-size: 14px; letter-spacing: .045em; }
+.nav-item .idx { font-size: 9px; width: 13px; }
+.nav-item .cnt { font-size: 10px; }
+.nav-ico { width: 17px; height: 17px; }
+.nav-ico svg { width: 17px; height: 17px; }
+.rail-title strong { font-size: 16.5px; }
+.rail-title span { font-size: 8.5px; }
+.rail-user-info b { font-size: 13px; }
+.rail-user-info span { font-size: 9.5px; }
+.rail-program strong { font-size: 12.5px; }
+.rail-meta { font-size: 9.5px; }
+
+/* 800px 左右高度：字号保持 14px，继续从行距和页脚次要信息里省空间 */
+@media (max-height: 820px) {
+  .nav-item { padding: 4px 14px; }
+  .rail-foot {
+    gap: 7px;
+    padding-top: 9px;
+  }
+  .rail-user {
+    padding-bottom: 6px;
+    margin-bottom: 5px;
+  }
+  .rail-program .mini-label { margin-bottom: 3px; }
+  .rail-meta { display: none; }
+}
