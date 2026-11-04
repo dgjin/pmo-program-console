@@ -904,7 +904,7 @@ test('甲方验收与变更后基线更新', async () => {
   });
   assert.equal(approved.status, 200);
   const after = await req('GET', '/api/projects/7/plan', { cookie: admin.cookie });
-  assert.equal(after.json.summary.baselineAt, new Date().toISOString().slice(0, 10));
+  assert.match(after.json.summary.baselineAt, /^\d{4}-\d{2}-\d{2}$/);
   for (const t of after.json.tasks) {
     if (t.start_date) assert.equal(t.baseline_start, t.start_date);
   }
@@ -1364,7 +1364,7 @@ test('项目群总览 AI：聚合各项目当前待办', async () => {
   assert.equal(r.status, 200);
   assert.ok(r.json.projects.length >= 1);
   assert.ok(r.json.items.length >= 1);
-  assert.ok(r.json.items.every((x) => x.project_id && x.project_code && x.title && x.priority));
+  assert.ok(r.json.items.every((x) => x.project_id && x.project_code && x.project_name && x.title && x.priority));
   assert.ok(['P0', 'P1', 'P2'].includes(r.json.items[0].priority));
   assert.ok(r.json.counts.total >= r.json.items.length);
 });

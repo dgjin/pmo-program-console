@@ -4357,3 +4357,10 @@ body.is-rail-collapsed .rail-foot { padding-top: 10px; }
 @media (max-width: 900px) {
   .overview-ai-grid { grid-template-columns: 1fr; gap: 16px; }
 }
+
+.overview-ai-project {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--ink-2);
+  letter-spacing: .02em;
+}

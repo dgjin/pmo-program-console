@@ -931,7 +931,8 @@ function overviewAIHTML(brief, projects) {
           ${items.length ? items.map((x) => `<a class="overview-ai-item overview-ai-item--${esc(x.level)}" href="#/projects/${x.project_id}/ai">
             <span class="overview-ai-priority">${esc(x.priority)}</span>
             <span class="overview-ai-body">
-              <span class="overview-ai-meta">${esc(x.project_code)} · ${esc(x.category)} · ${esc((x.audience || []).join(' / '))} · ${esc(briefDueLabel(x.due_date))}</span>
+              <span class="overview-ai-project">${esc(x.project_code)} · ${esc(x.project_name)}</span>
+              <span class="overview-ai-meta">${esc(x.category)} · ${esc((x.audience || []).join(' / '))} · ${esc(briefDueLabel(x.due_date))}</span>
               <b>${esc(x.title)}</b>
               <span class="overview-ai-detail">${esc(x.detail)}</span>
               <span class="overview-ai-go">打开项目 AI →</span>
