@@ -32,7 +32,7 @@ pmo-program-console-1.32.0/
 └── DEPLOY.md              # 本文件
 ```
 
-没有 `data/` 目录。第一次启动会自动创建 `data/pmo.db` 并写入演示数据。
+没有 `data/` 目录。第一次启动会自动创建 `data/pmo.db`；固定演示账号只在显式设置 `PMO_DEMO_MODE=1` 时写入。
 
 ---
 
@@ -65,17 +65,21 @@ ln -s /opt/node-v22.x-linux-x64/bin/node /usr/local/bin/node
 ## 3. 快速启动
 
 ```bash
-# 只允许本机访问
-node server.js
+# 正式环境首次启动：只允许本机访问，并初始化指定管理员
+PMO_ADMIN_USERNAME=admin PMO_ADMIN_NAME=系统管理员 \
+PMO_ADMIN_PASSWORD='替换为至少 12 位随机强密码' node server.js
 
 # 允许局域网访问（没有 HTTPS，建议只在前置反代后使用）
-PMO_HOST=0.0.0.0 PMO_PORT=5177 node server.js
+PMO_HOST=0.0.0.0 PMO_PORT=5177 PMO_ADMIN_PASSWORD='替换为至少 12 位随机强密码' node server.js
+
+# 本地演示才显式使用固定演示账号
+PMO_DEMO_MODE=1 node server.js
 ```
 
 Windows PowerShell：
 
 ```powershell
-$env:PMO_HOST="0.0.0.0"; $env:PMO_PORT="5177"; node server.js
+$env:PMO_HOST="0.0.0.0"; $env:PMO_PORT="5177"; $env:PMO_ADMIN_PASSWORD="替换为至少 12 位随机强密码"; node server.js
 ```
 
 打开 `http://127.0.0.1:5177`。
@@ -87,8 +91,14 @@ $env:PMO_HOST="0.0.0.0"; $env:PMO_PORT="5177"; node server.js
 | `PMO_PORT` | `5177` | 监听端口 |
 | `PMO_HOST` | `127.0.0.1` | 监听地址；放反代后保持 127.0.0.1 |
 | `PMO_DB` | `data/pmo.db` | 数据库路径，可以是绝对路径 |
+| `PMO_DEMO_MODE` | `0` | 仅 `1` 时在空库创建固定演示账号；不要在生产开启 |
+| `PMO_ADMIN_USERNAME` | `admin` | 非演示空库首次启动的管理员账号 |
+| `PMO_ADMIN_NAME` | `系统管理员` | 初始管理员姓名 |
+| `PMO_ADMIN_PASSWORD` | 无 | 非演示空库首次启动必填，至少 12 位；只用于首次建管理员 |
 
-首次启动会创建演示账号：
+非演示空库未提供合格的 `PMO_ADMIN_PASSWORD` 会拒绝启动。已有库不会因为环境变量变化而重置管理员密码，升级后必须停用固定演示账号或修改其密码。
+
+只有 `PMO_DEMO_MODE=1` 的空库首次启动会创建以下演示账号：
 
 | 账号 | 密码 | 角色 |
 | --- | --- | --- |
@@ -96,7 +106,7 @@ $env:PMO_HOST="0.0.0.0"; $env:PMO_PORT="5177"; node server.js
 | `zhangwei` 等 9 个 | `pm123456` | 乙方项目经理 |
 | `hejing` 等 9 个 | `pm123456` | 甲方项目经理 |
 
-**上线前必须改密码。**
+**演示账号不得用于生产。**
 
 项目经理分甲方 / 乙方：乙方负责周报、计划等维护，甲方只读并可留言；具体由项目台账里的两个项目经理字段决定。甲方账号为 `hejing` / `maxiao` / `gaoxiang` / `xulei` / `zhoumin` / `lintao` / `jiangnan` / `luocheng` / `tangyue`。
 
@@ -163,7 +173,7 @@ node scripts/verify-backup.js backups/pmo-<时间>.db
 
 ### 重置演示数据
 
-停服务，删除 `data/pmo.db`，重新启动。会重新生成演示数据。
+停服务，备份后删除 `data/pmo.db`，用 `PMO_DEMO_MODE=1 node server.js` 重新启动，才会重新生成演示账号。正式环境请使用管理员初始化变量，不要开启演示模式。
 
 ### 清空业务数据（正式上线前）
 
@@ -200,7 +210,23 @@ sudo systemctl enable --now pmo
 sudo systemctl status pmo
 ```
 
-`deploy/pmo.service` 默认监听 `127.0.0.1:5177`，数据库在 `/var/lib/pmo/pmo.db`。改端口或路径直接改 unit 里的 `Environment`。
+`deploy/pmo.service` 默认监听 `127.0.0.1:5177`，数据库在 `/var/lib/pmo/pmo.db`，并读取可选的 `/etc/pmo/pmo.env`。首次启动前创建该文件并限制权限：
+
+```bash
+sudo mkdir -p /etc/pmo
+sudo install -m 600 /dev/null /etc/pmo/pmo.env
+sudoedit /etc/pmo/pmo.env
+```
+
+写入以下配置，不要把密码写进仓库或 systemd unit：
+
+```ini
+PMO_ADMIN_USERNAME=admin
+PMO_ADMIN_NAME=系统管理员
+PMO_ADMIN_PASSWORD=替换为至少12位随机强密码
+```
+
+管理员创建后可移除 `PMO_ADMIN_PASSWORD` 这一行。改端口或路径直接改 unit 里的 `Environment`。
 
 日志：
 
@@ -238,7 +264,11 @@ Nginx 示例已经包含这一行。如果是应用直接跑 TLS（不推荐）�
 ## 7. Docker（可选）
 
 ```bash
-docker compose up -d --build
+# 首次启动正式环境；密码不要提交到 compose 文件或仓库
+PMO_ADMIN_PASSWORD='替换为至少 12 位随机强密码' docker compose up -d --build
+
+# 本地演示可用
+PMO_DEMO_MODE=1 docker compose up -d --build
 ```
 
 - 数据卷 `./data:/data`，数据库在宿主机 `data/pmo.db`；
@@ -251,7 +281,8 @@ docker compose up -d --build
 
 ## 8. 上线前安全检查清单
 
-- [ ] 改掉 `pmo` 和所有 `pm*` 演示账号的密码，或停用不用账号。
+- [ ] 确认生产未设置 `PMO_DEMO_MODE=1`；空库通过 `PMO_ADMIN_PASSWORD` 初始化管理员。
+- [ ] 老库升级后改掉 `pmo` 和所有演示账号的密码，或停用不用账号。
 - [ ] 给真实项目经理建账号，按项目授权。
 - [ ] 用「清空业务数据」删除演示项目、周报、计划、关口、依赖和其他账号，只保留管理员。
 - [ ] 服务只监听 `127.0.0.1`，由 Nginx 对外；或至少用防火墙限制来源网段。

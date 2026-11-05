@@ -10,6 +10,7 @@ fi
 
 PORT="${PMO_PORT:-5177}"
 URL="http://127.0.0.1:${PORT}"
+export PMO_DEMO_MODE="${PMO_DEMO_MODE:-1}"
 
 if [ "$PMO_NO_OPEN" != "1" ] && command -v open >/dev/null 2>&1; then
   ( sleep 1.2; open "$URL" >/dev/null 2>&1 || true ) &

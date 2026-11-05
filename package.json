@@ -6,7 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test tests/api.test.js",
+    "test": "node --test tests/api.test.js tests/bootstrap.test.js",
     "backup": "node scripts/backup.js",
     "test:ui": "node scripts/ui-smoke.mjs",
     "test:load": "node scripts/load-test.mjs",

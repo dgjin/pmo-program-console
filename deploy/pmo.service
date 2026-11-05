@@ -10,6 +10,7 @@ WorkingDirectory=/opt/pmo
 Environment=PMO_HOST=127.0.0.1
 Environment=PMO_PORT=5177
 Environment=PMO_DB=/var/lib/pmo/pmo.db
+EnvironmentFile=-/etc/pmo/pmo.env
 ExecStart=/usr/bin/node /opt/pmo/server.js
 Restart=on-failure
 RestartSec=3

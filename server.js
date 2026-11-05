@@ -29,6 +29,7 @@ try {
 
 const PORT = Number(process.env.PMO_PORT || 5177);
 const HOST = process.env.PMO_HOST || '127.0.0.1';
+const DEMO_MODE = process.env.PMO_DEMO_MODE === '1';
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, 'data');
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -965,6 +966,20 @@ function createUser({ username, name, role, password, party, vendorId = null }) 
 
 function seedUsers() {
   if (db.prepare('SELECT COUNT(*) AS n FROM users').get().n > 0) return;
+  if (!DEMO_MODE) {
+    const username = String(process.env.PMO_ADMIN_USERNAME || 'admin').trim();
+    const name = String(process.env.PMO_ADMIN_NAME || '系统管理员').trim();
+    const password = String(process.env.PMO_ADMIN_PASSWORD || '');
+    if (!/^[a-z0-9_.-]{3,32}$/i.test(username)) {
+      throw new Error('PMO_ADMIN_USERNAME 需为 3–32 位字母、数字或 . _ -');
+    }
+    if (!name) throw new Error('PMO_ADMIN_NAME 不能为空');
+    if (password.length < 12) {
+      throw new Error('生产空库首次启动需设置至少 12 位的 PMO_ADMIN_PASSWORD；演示环境请显式设置 PMO_DEMO_MODE=1');
+    }
+    createUser({ username, name, role: 'pmo', password, party: 'PMO' });
+    return;
+  }
   const pmoId = createUser({ username: 'pmo', name: '宋岩', role: 'pmo', password: 'pmo123456', party: 'PMO' });
   const link = db.prepare('INSERT OR IGNORE INTO user_projects (user_id, project_id) VALUES (?, ?)');
   const byName = new Map();
@@ -1164,7 +1179,7 @@ function seedDualPms() {
   for (const p of projects) {
     let vendor = p.vendor_pm_id ? userById(p.vendor_pm_id) : null;
     if (!vendor && p.pm) vendor = db.prepare("SELECT * FROM users WHERE role = 'pm' AND name = ?").get(p.pm);
-    if (!vendor && p.pm) {
+    if (!vendor && p.pm && DEMO_MODE) {
       vendor = { id: createUser({ username: PM_USERNAMES[p.pm] || `pm${p.id}`, name: p.pm, role: 'pm', password: 'pm123456', party: '乙方' }) };
     }
     if (vendor) {
@@ -1177,7 +1192,7 @@ function seedDualPms() {
     let client = p.client_pm_id ? userById(p.client_pm_id) : null;
     if (!client && p.client_pm) client = db.prepare("SELECT * FROM users WHERE role = 'pm' AND name = ?").get(p.client_pm);
     if (!client && mapping) client = db.prepare("SELECT * FROM users WHERE role = 'pm' AND name = ?").get(mapping.name);
-    if (!client && mapping) {
+    if (!client && mapping && DEMO_MODE) {
       client = {
         id: createUser({ username: mapping.username, name: mapping.name, role: 'pm', password: 'pm123456', party: '甲方' }),
         name: mapping.name,
@@ -3887,17 +3902,21 @@ function processSnapshot(project, data) {
   return { groups, evm, overall: Math.round((done / total) * 100), done, total, missing };
 }
 
-function processMatrix() {
-  const m = buildModel();
-  const charters = new Map(db.prepare('SELECT * FROM charters').all().map((c) => [c.project_id, c]));
-  const changes = db.prepare('SELECT project_id, status FROM change_requests').all();
-  const lessons = db.prepare('SELECT project_id FROM lessons').all();
-  const plans = db.prepare('SELECT project_id, status FROM plans').all();
-  const allocs = db.prepare('SELECT project_id, COUNT(*) AS n FROM allocations GROUP BY project_id').all();
+function processMatrix(model = null) {
+  const m = model || buildModel();
+  const projectIds = m.projects.map((p) => p.id);
+  const placeholders = projectIds.map(() => '?').join(',');
+  const scope = projectIds.length ? `WHERE project_id IN (${placeholders})` : 'WHERE 0';
+  const charters = new Map(db.prepare(`SELECT * FROM charters ${scope}`).all(...projectIds).map((c) => [c.project_id, c]));
+  const changes = db.prepare(`SELECT project_id, status FROM change_requests ${scope}`).all(...projectIds);
+  const lessons = db.prepare(`SELECT project_id FROM lessons ${scope}`).all(...projectIds);
+  const plans = db.prepare(`SELECT project_id, status FROM plans ${scope}`).all(...projectIds);
+  const allocs = db.prepare(`SELECT project_id, COUNT(*) AS n FROM allocations ${scope} GROUP BY project_id`).all(...projectIds);
   const allocMap = new Map(allocs.map((a) => [a.project_id, a.n]));
   const week = mondayOf(today());
-  const weekReports = db.prepare('SELECT project_id, status, content FROM weekly_reports WHERE week_start = ?')
-    .all(week).map((r) => ({ ...r, progress: parseContent(r.content).progress ?? null }));
+  const reportScope = projectIds.length ? `AND project_id IN (${placeholders})` : 'AND 0';
+  const weekReports = db.prepare(`SELECT project_id, status, content FROM weekly_reports WHERE week_start = ? ${reportScope}`)
+    .all(week, ...projectIds).map((r) => ({ ...r, progress: parseContent(r.content).progress ?? null }));
 
   const projects = m.projects.map((p) => {
     const proc = processSnapshot(p, {
@@ -4319,15 +4338,18 @@ function workflowSummary(user) {
   };
 }
 
-function buildProgramPlan(label) {
+function buildProgramPlan(label, model = null) {
   const bounds = periodBounds(label);
-  const m = buildModel();
+  const m = model || buildModel();
+  const projectIds = m.projects.map((p) => p.id);
+  const placeholders = projectIds.map(() => '?').join(',');
+  const planScope = projectIds.length ? `AND pl.project_id IN (${placeholders})` : 'AND 0';
   const plans = db.prepare(`
     SELECT pl.*, p.code AS project_code, p.name AS project_name, p.pm AS project_pm
     FROM plans pl JOIN projects p ON p.id = pl.project_id
-    WHERE pl.period_label = ? AND pl.status = 'approved'
+    WHERE pl.period_label = ? AND pl.status = 'approved' ${planScope}
     ORDER BY p.priority ASC, p.code ASC
-  `).all(label).map(hydrateRow);
+  `).all(label, ...projectIds).map(hydrateRow);
 
   const inRange = (d) => d >= bounds.start && d <= bounds.end;
   const milestones = m.milestones
@@ -4460,12 +4482,15 @@ function buildReport(model = null) {
   });
 
   const weekStart = iso(monday);
+  const projectIds = m.projects.map((p) => p.id);
+  const placeholders = projectIds.map(() => '?').join(',');
+  const reportScope = projectIds.length ? `AND r.project_id IN (${placeholders})` : 'AND 0';
   const submitted = db.prepare(`
     SELECT r.*, p.name AS project_name, p.code AS project_code
     FROM weekly_reports r JOIN projects p ON p.id = r.project_id
-    WHERE r.week_start = ? AND r.status IN ('submitted', 'approved')
+    WHERE r.week_start = ? AND r.status IN ('submitted', 'approved') ${reportScope}
     ORDER BY p.priority ASC, p.code ASC
-  `).all(weekStart).map(hydrateRow);
+  `).all(weekStart, ...projectIds).map(hydrateRow);
   const approvedCount = submitted.filter((r) => r.status === 'approved').length;
   const submittedIds = new Set(submitted.map((r) => r.project_id));
   const missingProjects = m.projects.filter((p) => !submittedIds.has(p.id));
@@ -4777,7 +4802,8 @@ function scopeModel(m, projects, keepSnapshots = false) {
     ? Math.round(projects.reduce((sum, p) => sum + p.progress * (Number(p.budget) || 0), 0) / totalBudget)
     : (projects.length ? Math.round(projects.reduce((sum, p) => sum + p.progress, 0) / projects.length) : 0);
   const openRisks = risks.filter((r) => r.status !== '已关闭');
-  const overdueMs = milestones.filter((x) => x.status !== '已完成' && x.due_date < today());
+  const upcoming = m.stats.upcoming.filter((x) => ids.has(x.project_id));
+  const overdueMs = m.stats.overdueMs.filter((x) => ids.has(x.project_id));
   const ragCount = { green: 0, amber: 0, red: 0 };
   for (const p of projects) ragCount[p.health.rag] = (ragCount[p.health.rag] || 0) + 1;
   const stats = {
@@ -4792,7 +4818,7 @@ function scopeModel(m, projects, keepSnapshots = false) {
     openRisks: openRisks.length,
     exposure: openRisks.reduce((sum, r) => sum + r.probability * r.impact, 0),
     highRisks: openRisks.filter((r) => r.probability * r.impact >= 16).length,
-    ragCount, overdueMs,
+    ragCount, upcoming, overdueMs,
     upcomingGates: gates.filter((g) => g.status === '待评审' && g.planned_date >= today()).slice(0, 8),
     overdueGates: gates.filter((g) => g.status === '待评审' && g.planned_date < today()),
     pendingGates: gates.filter((g) => g.status === '待评审').length,
@@ -4887,7 +4913,7 @@ async function handleApi(req, res, u) {
   const method = req.method;
 
   if (method === 'GET' && p === '/api/health') {
-    return json(res, { ok: true, db: DB_FILE, today: today() });
+    return json(res, { ok: true, db: DB_FILE, today: today(), demoMode: DEMO_MODE });
   }
 
   // 写操作同源校验，配合 SameSite Cookie 降低 CSRF 风险
@@ -5020,8 +5046,7 @@ async function handleApi(req, res, u) {
     const def = dlvDef(kind);
     const item = getDeliverable(kind, Number(dlvSingle[2]));
     if (!item) return json(res, { error: '记录不存在' }, 404);
-    const allowed = isPmo(me) || me.projects.includes(item.project_id) || ['submitted', 'approved'].includes(item.status);
-    if (!allowed) { item.content = {}; item.restricted = true; }
+    requireViewProject(me, item.project_id);
     const project = db.prepare('SELECT id, code, name, pm, progress, stage FROM projects WHERE id = ?').get(item.project_id);
     const history = db.prepare(`
       SELECT actor_name, action, detail, created_at FROM audit_log
@@ -5197,12 +5222,16 @@ async function handleApi(req, res, u) {
 
   if (method === 'GET' && p === '/api/program-plan') {
     const period = u.searchParams.get('period') || quarterOf(today());
-    return json(res, buildProgramPlan(period));
+    const programId = resolveProgramId(req, me);
+    const model = filterModelForUser(filterModelForProgram(buildModel(), programId), me);
+    return json(res, buildProgramPlan(period, model));
   }
 
   if (method === 'GET' && p === '/api/program-plan.md') {
     const period = u.searchParams.get('period') || quarterOf(today());
-    const plan = buildProgramPlan(period);
+    const programId = resolveProgramId(req, me);
+    const model = filterModelForUser(filterModelForProgram(buildModel(), programId), me);
+    const plan = buildProgramPlan(period, model);
     return send(res, 200, plan.markdown, {
       'Content-Type': 'text/markdown; charset=utf-8',
       'Content-Disposition': `attachment; filename="program-plan-${period}.md"`,
@@ -5405,7 +5434,9 @@ async function handleApi(req, res, u) {
   }
 
   if (method === 'GET' && p === '/api/process-matrix') {
-    return json(res, processMatrix());
+    const programId = resolveProgramId(req, me);
+    const model = filterModelForUser(filterModelForProgram(buildModel(), programId), me);
+    return json(res, processMatrix(model));
   }
 
   const charterMatch = p.match(/^\/api\/projects\/(\d+)\/charter$/);
@@ -7193,7 +7224,8 @@ ${preds}</Task>`;
     return json(res, { ok: true });
   }
 
-function capacityReport(programId = null) {
+function capacityReport(model = null) {
+  const m = model || buildModel();
   const base = new Date();
   const months = [];
   for (let i = 0; i < 6; i += 1) {
@@ -7202,11 +7234,15 @@ function capacityReport(programId = null) {
     const key = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
     months.push({ key, label: `${Number(key.slice(5))}月`, start: iso(start), end: iso(end), workdays: workdaysBetween(iso(start), iso(end)) });
   }
+  const projectIds = m.projects.map((p) => p.id);
+  const placeholders = projectIds.map(() => '?').join(',');
+  const allocationScope = projectIds.length ? `WHERE p.id IN (${placeholders})` : 'WHERE 0';
+  const taskScope = projectIds.length ? `AND p.id IN (${placeholders})` : 'AND 0';
   const allocations = db.prepare(`
     SELECT a.person, a.vendor_id, v.name AS vendor_name, p.code, p.name AS project_name, a.pct
     FROM allocations a LEFT JOIN vendors v ON v.id = a.vendor_id JOIN projects p ON p.id = a.project_id
-    ${programId ? 'WHERE p.program_id = ?' : ''}
-  `).all(...(programId ? [programId] : []));
+    ${allocationScope}
+  `).all(...projectIds);
   const tasks = db.prepare(`
     SELECT t.*, p.code, p.name AS project_name, v.name AS vendor_name
     FROM plan_tasks t JOIN projects p ON p.id = t.project_id
@@ -7214,8 +7250,8 @@ function capacityReport(programId = null) {
     WHERE t.owner IS NOT NULL AND t.owner <> ''
       AND NOT EXISTS (SELECT 1 FROM plan_tasks c WHERE c.parent_id = t.id)
       AND t.kind <> 'milestone'
-      ${programId ? 'AND p.program_id = ?' : ''}
-  `).all(...(programId ? [programId] : []));
+      ${taskScope}
+  `).all(...projectIds);
   const people = new Map();
   const ensure = (name) => {
     if (!people.has(name)) people.set(name, { person: name, vendor: '', months: {}, peak: 0, over: 0 });
@@ -7266,7 +7302,7 @@ function capacityReport(programId = null) {
     const people = [...map.values()].sort((a, b) => b.total - a.total);
     return json(res, {
       people,
-      capacity: capacityReport(programId),
+      capacity: capacityReport(m),
       summary: {
         headcount: people.length,
         overloaded: people.filter((x) => x.total > 100).length,
@@ -7697,6 +7733,7 @@ function capacityReport(programId = null) {
   }
 
   if (method === 'GET' && p === '/api/export') {
+    requirePmo(me);
     const dump = {
       exportedAt: new Date().toISOString(),
       programs: db.prepare('SELECT * FROM programs').all(),
@@ -8022,6 +8059,7 @@ function capacityReport(programId = null) {
   }
 
   if (method === 'GET' && p === '/api/export') {
+    requirePmo(me);
     const dump = {
       exportedAt: new Date().toISOString(),
       programs: db.prepare('SELECT * FROM programs').all(),

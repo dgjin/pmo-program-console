@@ -12,7 +12,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const server = spawn(process.execPath, ['server.js'], {
   cwd: ROOT,
-  env: { ...process.env, PMO_PORT: String(PORT), PMO_HOST: '127.0.0.1', PMO_DB: path.join(TMP, 'pmo.db') },
+  env: { ...process.env, PMO_PORT: String(PORT), PMO_HOST: '127.0.0.1', PMO_DB: path.join(TMP, 'pmo.db'), PMO_DEMO_MODE: '1' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let serverLog = '';

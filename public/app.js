@@ -7641,10 +7641,15 @@ window.addEventListener('hashchange', async () => {
 
 /* ---------------------------------------------------------------- boot --- */
 
-function renderLogin(message = '') {
+async function renderLogin(message = '') {
   document.body.classList.add('is-login');
   state.data = null;
   state.dlvData = null;
+  let demoMode = false;
+  try {
+    const res = await fetch('/api/health');
+    if (res.ok) demoMode = (await res.json()).demoMode === true;
+  } catch { /* 登录时仍保留手工账号入口 */ }
   $('#rail-user').innerHTML = '';
   $('#view').innerHTML = `
     <div class="login">
@@ -7677,6 +7682,7 @@ function renderLogin(message = '') {
           <button class="btn btn--solid login-submit" type="submit">进入控制台 ${ICONS.arrow}</button>
         </form>
 
+        ${demoMode ? `
         <div class="login-demo">
           <span class="mini-label">演示账号 · 一键登录</span>
           <div class="login-demo-grid">
@@ -7685,7 +7691,7 @@ function renderLogin(message = '') {
             <button type="button" data-action="demo-login" data-user="hejing"><b>何静 · 甲方项目经理</b><i>中台项目的业主侧负责人</i></button>
           </div>
         </div>
-        <p class="login-hint">pmo / pmo123456　·　甲方 / 乙方项目经理 / pm123456</p>
+        <p class="login-hint">pmo / pmo123456　·　甲方 / 乙方项目经理 / pm123456</p>` : ''}
       </section>
     </div>`;
   setTimeout(() => $('#login-username')?.focus(), 80);

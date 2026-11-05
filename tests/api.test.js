@@ -3,6 +3,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
+const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -41,6 +42,23 @@ async function req(method, p, { body, cookie, headers: extraHeaders = {} } = {})
   return { status: res.status, json, headers: res.headers };
 }
 
+function beginDelayedPost(pathname, cookie) {
+  let request;
+  const response = new Promise((resolve, reject) => {
+    request = http.request(`${BASE}${pathname}`, {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json', 'Content-Length': 2 },
+    }, (res) => {
+      let text = '';
+      res.on('data', (chunk) => { text += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, json: JSON.parse(text) }));
+    });
+    request.on('error', reject);
+    request.flushHeaders();
+  });
+  return { request, response };
+}
+
 async function login(username, password) {
   const r = await req('POST', '/api/auth/login', { body: { username, password } });
   const raw = r.headers.get('set-cookie') || '';
@@ -63,7 +81,7 @@ let reportId;
 before(async () => {
   server = spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
-    env: { ...process.env, PMO_PORT: String(PORT), PMO_DB: DB, PMO_HOST: '127.0.0.1' },
+    env: { ...process.env, PMO_PORT: String(PORT), PMO_DB: DB, PMO_HOST: '127.0.0.1', PMO_DEMO_MODE: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stderr.on('data', (chunk) => process.stderr.write(chunk));
@@ -80,6 +98,7 @@ test('健康检查与安全响应头', async () => {
   const r = await req('GET', '/api/health');
   assert.equal(r.status, 200);
   assert.equal(r.json.ok, true);
+  assert.equal(r.json.demoMode, true);
   assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(r.headers.get('x-frame-options'), 'DENY');
   assert.match(r.headers.get('content-security-policy') || '', /frame-ancestors 'none'/);
@@ -110,6 +129,50 @@ test('bootstrap 返回角色、待办与治理关口', async () => {
   assert.ok(Array.isArray(r.json.gates));
   assert.ok(r.json.gates.length >= 20);
   assert.ok(r.json.stats.pendingGates >= 10);
+});
+
+test('权限：甲方不能导出或读取其他项目的交付物和聚合数据', async () => {
+  const client = await login('hejing', 'pm123456');
+  assert.equal(client.status, 200);
+
+  const exported = await req('GET', '/api/export', { cookie: client.cookie });
+  assert.equal(exported.status, 400);
+  assert.equal(exported.json.projects, undefined);
+
+  for (const id of [2, 3]) {
+    const detail = await req('GET', `/api/deliverables/weekly/${id}`, { cookie: client.cookie });
+    assert.equal(detail.status, 400);
+    assert.equal(detail.json.item, undefined);
+    assert.equal(detail.json.versions, undefined);
+    assert.equal(detail.json.comments, undefined);
+  }
+
+  const allProjects = await req('GET', '/api/projects', { cookie: pmo.cookie });
+  const otherName = allProjects.json.find((p) => p.id === 2).name;
+  const report = await req('GET', '/api/report', { cookie: client.cookie });
+  assert.equal(report.status, 200);
+  assert.equal(report.json.coverage.total, 1);
+  assert.ok(report.json.coverage.submitted <= 1);
+  assert.equal(JSON.stringify(report.json).includes(otherName), false);
+
+  const programPlan = await req('GET', '/api/program-plan?period=2026-Q4', { cookie: client.cookie });
+  assert.equal(programPlan.status, 200);
+  assert.equal(programPlan.json.coverage.total, 1);
+  assert.equal(JSON.stringify(programPlan.json).includes(otherName), false);
+
+  const matrix = await req('GET', '/api/process-matrix', { cookie: client.cookie });
+  assert.equal(matrix.status, 200);
+  assert.deepEqual(matrix.json.projects.map((p) => p.id), [1]);
+
+  const workspace = await req('GET', '/api/projects/1/workspace', { cookie: client.cookie });
+  const plan = await req('GET', '/api/projects/1/plan', { cookie: client.cookie });
+  const expectedPeople = new Set([
+    ...workspace.json.allocations.map((a) => a.person),
+    ...plan.json.tasks.filter((t) => !t.isSummary && t.kind !== 'milestone' && t.owner).map((t) => t.owner),
+  ]);
+  const resources = await req('GET', '/api/resources', { cookie: client.cookie });
+  assert.equal(resources.status, 200);
+  assert.deepEqual(new Set(resources.json.capacity.people.map((p) => p.person)), expectedPeople);
 });
 
 test('项目：PM 不能新建，PMO 可以，日期倒置被拒', async () => {
@@ -251,10 +314,29 @@ test('工作流：退回后修改重提生成第二版，评论进入沟通记�
   assert.ok(comment.json.comments.some((c) => c.body.includes('请复核')));
 });
 
+test('交付物并发提交：只允许一次状态迁移和一个版本', async () => {
+  const created = await req('POST', '/api/deliverables', {
+    cookie: pm.cookie,
+    body: { kind: 'weekly', project_id: 1, period: mondayShift(3), content: { summary: '并发提交验证' } },
+  });
+  assert.equal(created.status, 201);
+  const id = created.json.item.id;
+  const first = beginDelayedPost(`/api/deliverables/weekly/${id}/submit`, pm.cookie);
+  const second = beginDelayedPost(`/api/deliverables/weekly/${id}/submit`, pm.cookie);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  first.request.end('{}');
+  second.request.end('{}');
+  const responses = await Promise.all([first.response, second.response]);
+  assert.deepEqual(responses.map((r) => r.status).sort((a, b) => a - b), [200, 400]);
+  const detail = await req('GET', `/api/deliverables/weekly/${id}`, { cookie: pm.cookie });
+  assert.equal(detail.json.item.status, 'submitted');
+  assert.equal(detail.json.versions.length, 1);
+});
+
 test('PMP 过程：章程、变更控制、经验教训与过程矩阵', async () => {
   const matrix = await req('GET', '/api/process-matrix', { cookie: pm.cookie });
   assert.equal(matrix.status, 200);
-  assert.ok(matrix.json.projects.length >= 9);
+  assert.deepEqual(matrix.json.projects.map((p) => p.id), [1]);
   assert.equal(matrix.json.projects[0].groups.length, 5);
   assert.ok(matrix.json.summary.avgOverall > 0);
 

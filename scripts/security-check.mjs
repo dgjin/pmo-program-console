@@ -16,7 +16,7 @@ const check = (ok, label, detail = '') => {
 
 const server = spawn(process.execPath, ['server.js'], {
   cwd: ROOT,
-  env: { ...process.env, PMO_PORT: String(PORT), PMO_HOST: '127.0.0.1', PMO_DB: path.join(TMP, 'pmo.db') },
+  env: { ...process.env, PMO_PORT: String(PORT), PMO_HOST: '127.0.0.1', PMO_DB: path.join(TMP, 'pmo.db'), PMO_DEMO_MODE: '1' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let log = '';
@@ -82,6 +82,13 @@ async function main() {
   check([400, 403, 404].includes(idor.status), '跨项目越权访问被拒绝', `status ${idor.status}`);
   const idorKb = await fetch(`${BASE}/api/projects/3/kb`, { headers: { Cookie: clientCookie } });
   check([400, 403, 404].includes(idorKb.status), '跨项目知识库访问被拒绝', `status ${idorKb.status}`);
+  const idorDeliverable = await fetch(`${BASE}/api/deliverables/weekly/2`, { headers: { Cookie: clientCookie } });
+  check([400, 403, 404].includes(idorDeliverable.status), '跨项目交付物详情被拒绝', `status ${idorDeliverable.status}`);
+  const exportResponse = await fetch(`${BASE}/api/export`, { headers: { Cookie: clientCookie } });
+  check([400, 403, 404].includes(exportResponse.status), '普通用户全量导出被拒绝', `status ${exportResponse.status}`);
+  const scopedReport = await fetch(`${BASE}/api/report`, { headers: { Cookie: clientCookie } });
+  const scopedReportBody = await scopedReport.json();
+  check(scopedReportBody.coverage?.total === 1, '项目群周报按用户项目范围过滤');
 
   const badLogin = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',

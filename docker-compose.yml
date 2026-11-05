@@ -9,6 +9,10 @@ services:
       PMO_HOST: 0.0.0.0
       PMO_PORT: "5177"
       PMO_DB: /data/pmo.db
+      PMO_DEMO_MODE: ${PMO_DEMO_MODE:-0}
+      PMO_ADMIN_USERNAME: ${PMO_ADMIN_USERNAME:-admin}
+      PMO_ADMIN_NAME: ${PMO_ADMIN_NAME:-系统管理员}
+      PMO_ADMIN_PASSWORD: ${PMO_ADMIN_PASSWORD:-}
     volumes:
       - ./data:/data
     restart: unless-stopped
