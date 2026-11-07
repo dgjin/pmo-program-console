@@ -14,6 +14,7 @@ EnvironmentFile=-/etc/pmo/pmo.env
 ExecStart=/usr/bin/node /opt/pmo/server.js
 Restart=on-failure
 RestartSec=3
+TimeoutStopSec=15s
 NoNewPrivileges=true
 PrivateTmp=true
 

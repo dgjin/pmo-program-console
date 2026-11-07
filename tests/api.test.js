@@ -81,7 +81,14 @@ let reportId;
 before(async () => {
   server = spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
-    env: { ...process.env, PMO_PORT: String(PORT), PMO_DB: DB, PMO_HOST: '127.0.0.1', PMO_DEMO_MODE: '1' },
+    env: {
+      ...process.env,
+      PMO_PORT: String(PORT),
+      PMO_DB: DB,
+      PMO_HOST: '127.0.0.1',
+      PMO_DEMO_MODE: '1',
+      PMO_LLM_ALLOWED_HOSTS: '127.0.0.1,localhost',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stderr.on('data', (chunk) => process.stderr.write(chunk));
@@ -129,6 +136,12 @@ test('bootstrap 返回角色、待办与治理关口', async () => {
   assert.ok(Array.isArray(r.json.gates));
   assert.ok(r.json.gates.length >= 20);
   assert.ok(r.json.stats.pendingGates >= 10);
+  const withReport = r.json.projects.find((p) => p.weekReport);
+  assert.ok(withReport, '至少一个项目有本周周报');
+  assert.ok('acceptance_id' in withReport.weekReport);
+  const withPlan = r.json.projects.find((p) => p.quarterPlan);
+  assert.ok(withPlan, '至少一个项目有本季计划');
+  assert.ok('acceptance_id' in withPlan.quarterPlan);
 });
 
 test('权限：甲方不能导出或读取其他项目的交付物和聚合数据', async () => {
@@ -252,9 +265,12 @@ test('审核：提交后 PM 不能改，PMO 通过并同步进度', async () => 
   assert.equal(projects.json.find((p) => p.id === 1).progress, plan.json.summary.progress);
 });
 
-test('填报列表包含审核时效字段', async () => {
+test('填报列表包含项目归属与审核时效字段', async () => {
   const r = await req('GET', `/api/deliverables?kind=weekly&period=${mondayShift(0)}`, { cookie: pmo.cookie });
   assert.equal(r.status, 200);
+  const own = r.json.projects.find((p) => p.id === 1);
+  assert.equal(own.vendor_pm_id, pm.user.id);
+  assert.equal(typeof own.client_pm_id, 'number');
   const submitted = r.json.projects.filter((p) => p.item && p.item.status === 'submitted');
   assert.ok(submitted.length >= 1);
   for (const row of submitted) {
@@ -312,6 +328,21 @@ test('工作流：退回后修改重提生成第二版，评论进入沟通记�
   });
   assert.equal(comment.status, 201);
   assert.ok(comment.json.comments.some((c) => c.body.includes('请复核')));
+});
+
+test('甲方项目经理可在其项目的周报下留言', async () => {
+  const client = await login('hejing', 'pm123456');
+  assert.equal(client.status, 200);
+  const detail = await req('GET', `/api/deliverables/weekly/by-project/1?period=${mondayShift(0)}`, { cookie: client.cookie });
+  assert.equal(detail.status, 200);
+  const item = detail.json.item;
+  assert.ok(item, '项目 1 本周应有周报记录');
+  const comment = await req('POST', `/api/deliverables/weekly/${item.id}/comments`, {
+    cookie: client.cookie,
+    body: { body: '业主侧确认收到，验收时按此口径核对。' },
+  });
+  assert.equal(comment.status, 201);
+  assert.ok(comment.json.comments.some((c) => c.role === 'client' && c.body.includes('验收时按此口径核对')));
 });
 
 test('交付物并发提交：只允许一次状态迁移和一个版本', async () => {
@@ -531,9 +562,27 @@ test('跨项目依赖：PM 只读，PMO 维护，导出包含依赖', async () =
   assert.equal(removed.status, 200);
 });
 
-test('备份：导出包含治理数据，导入后数量一致', async () => {
+test('备份：版本受控，业务数据与显式授权完整往返', async () => {
+  const member = await req('POST', '/api/admin/users', {
+    cookie: pmo.cookie,
+    body: { username: 'importmember', name: '导入授权成员', role: 'pm', password: 'member123456', project_ids: [7, 8] },
+  });
+  assert.equal(member.status, 201);
+
   const dump = await req('GET', '/api/export', { cookie: pmo.cookie });
   assert.equal(dump.status, 200);
+  assert.equal(dump.json.schemaVersion, 1);
+  const collections = [
+    'programs', 'projects', 'milestones', 'risks', 'allocations', 'updates', 'events',
+    'metricSnapshots', 'projectScores', 'meetingRooms', 'roomBookings', 'supplyCategories',
+    'supplyItems', 'supplyRequests', 'projectKbNotes', 'helpArticles', 'calendarDays',
+    'templates', 'vendors', 'plans', 'weeklyReports', 'programReports', 'auditLog', 'gates',
+    'revisions', 'comments', 'dependencies', 'charters', 'changeRequests', 'lessons',
+    'benefits', 'actions', 'acceptances', 'gateChecks', 'planTasks', 'taskDeps', 'appSettings',
+  ];
+  for (const key of collections) assert.ok(Array.isArray(dump.json[key]), `${key} 应包含在备份中`);
+  assert.equal(dump.json.appSettings.some((s) => s.key === 'ai.api_key'), false);
+  assert.ok(dump.json.allocations.some((a) => a.vendor_id));
   assert.ok(Array.isArray(dump.json.gates));
   assert.ok(dump.json.gates.length >= 20);
   assert.ok(Array.isArray(dump.json.dependencies));
@@ -560,10 +609,41 @@ test('备份：导出包含治理数据，导入后数量一致', async () => {
   assert.ok(dump.json.gateChecks.length >= 30);
   assert.ok(Array.isArray(dump.json.weeklyReports));
 
+  const task = dump.json.planTasks[0];
+  task.actual_start = '2026-11-01';
+  task.actual_end = '2026-11-03';
+  task.vendor_id = dump.json.vendors[0].id;
+
+  const unsupported = await req('POST', '/api/import', {
+    cookie: pmo.cookie,
+    body: { ...dump.json, schemaVersion: 999 },
+  });
+  assert.equal(unsupported.status, 400);
+  const unchanged = await req('GET', '/api/gates', { cookie: pmo.cookie });
+  assert.equal(unchanged.json.gates.length, dump.json.gates.length);
+
   const imported = await req('POST', '/api/import', { cookie: pmo.cookie, body: dump.json });
   assert.equal(imported.status, 200);
-  const after = await req('GET', '/api/gates', { cookie: pmo.cookie });
-  assert.equal(after.json.gates.length, dump.json.gates.length);
+  const restored = await req('GET', '/api/export', { cookie: pmo.cookie });
+  assert.equal(restored.status, 200);
+  for (const key of collections.filter((key) => !['events', 'auditLog', 'appSettings'].includes(key))) {
+    assert.equal(restored.json[key].length, dump.json[key].length, `${key} 导入后数量应一致`);
+  }
+  assert.ok(restored.json.events.length >= dump.json.events.length);
+  assert.ok(restored.json.auditLog.length >= dump.json.auditLog.length);
+  const restoredTask = restored.json.planTasks.find((t) => t.id === task.id);
+  assert.equal(restoredTask.actual_start, task.actual_start);
+  assert.equal(restoredTask.actual_end, task.actual_end);
+  assert.equal(restoredTask.vendor_id, task.vendor_id);
+  assert.deepEqual(
+    restored.json.allocations.map((a) => [a.id, a.vendor_id]),
+    dump.json.allocations.map((a) => [a.id, a.vendor_id]),
+  );
+
+  const session = await login('importmember', 'member123456');
+  assert.equal(session.status, 200);
+  const me = await req('GET', '/api/me', { cookie: session.cookie });
+  assert.deepEqual(me.json.user.projects.sort((a, b) => a - b), [7, 8]);
 });
 
 test('账号：PMO 新建账号并授权，停用后立即失效', async () => {
@@ -1579,10 +1659,98 @@ test('管理员前端配置 AI：加密保存、不回显、可清除', async ()
   assert.equal(noBase.status, 400);
 });
 
+test('AI 外发：主机白名单、敏感字段最小化与审计', async () => {
+  const admin = await login('pmo', 'pmo123456');
+  const deniedHost = await req('PUT', '/api/admin/ai', {
+    cookie: admin.cookie,
+    body: { base_url: 'https://example.com/v1', model: 'test-model' },
+  });
+  assert.equal(deniedHost.status, 400);
+  const insecure = await req('PUT', '/api/admin/ai', {
+    cookie: admin.cookie,
+    body: { base_url: 'http://example.com/v1', model: 'test-model' },
+  });
+  assert.equal(insecure.status, 400);
+
+  const payloads = [];
+  const mock = http.createServer((request, response) => {
+    let text = '';
+    request.on('data', (chunk) => { text += chunk; });
+    request.on('end', () => {
+      payloads.push(JSON.parse(text));
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ choices: [{ message: { content: '外部模型已收到最小化上下文' } }] }));
+    });
+  });
+  await new Promise((resolve) => mock.listen(0, '127.0.0.1', resolve));
+  const baseUrl = `http://127.0.0.1:${mock.address().port}/v1`;
+  try {
+    const saved = await req('PUT', '/api/admin/ai', {
+      cookie: admin.cookie,
+      body: { base_url: baseUrl, model: 'test-model' },
+    });
+    assert.equal(saved.status, 200);
+
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    const project = await req('POST', '/api/projects/1/ai', {
+      cookie: admin.cookie,
+      body: { mode: 'summary' },
+    });
+    assert.equal(project.status, 200);
+    assert.equal(project.json.fallback, false);
+    const global = await req('POST', '/api/ai/assistant', {
+      cookie: admin.cookie,
+      body: { mode: 'portfolio' },
+    });
+    assert.equal(global.status, 200);
+    assert.equal(global.json.fallback, false);
+    assert.equal(payloads.length, 2);
+
+    const projectText = payloads[0].messages[1].content;
+    const projectContext = JSON.parse(projectText.match(/项目上下文：\n([\s\S]*?)\n\n$/)[1]);
+    assert.equal(projectContext.project.budget, undefined);
+    assert.equal(projectContext.project.spent, undefined);
+    assert.equal(projectContext.project.pm, undefined);
+    assert.equal(projectContext.project.client_pm, undefined);
+    assert.ok(projectContext.actions.every((a) => a.owner === undefined));
+    assert.ok(projectContext.knowledge.every((k) => k.content === undefined && k.summary === undefined));
+
+    const globalText = payloads[1].messages[1].content;
+    const globalContext = JSON.parse(globalText.match(/项目群上下文：\n([\s\S]*?)\n\n$/)[1]);
+    assert.equal(globalContext.stats.totalBudget, undefined);
+    assert.equal(globalContext.stats.totalSpent, undefined);
+    assert.ok(globalContext.projects.every((p) => p.budget === undefined && p.spent === undefined));
+    assert.ok(globalContext.projects.every((p) => p.risks.every((r) => r.owner === undefined)));
+    assert.ok(globalContext.knowledge.every((k) => k.content === undefined && k.summary === undefined));
+
+    const exported = await req('GET', '/api/export', { cookie: admin.cookie });
+    const projectAudit = exported.json.auditLog.filter((a) => a.action === '项目 AI').at(-1);
+    const globalAudit = exported.json.auditLog.filter((a) => a.action === '全局 AI').at(-1);
+    for (const entry of [projectAudit, globalAudit]) {
+      const detail = JSON.parse(entry.detail);
+      assert.equal(detail.external, true);
+      assert.equal(detail.fallback, false);
+      assert.equal(detail.host, '127.0.0.1');
+      assert.equal(detail.knowledgeContent, false);
+      assert.equal(detail.financial, false);
+    }
+  } finally {
+    await req('PUT', '/api/admin/ai', {
+      cookie: admin.cookie,
+      body: { base_url: '', model: 'gpt-4o-mini', clear_key: true },
+    });
+    await new Promise((resolve) => {
+      mock.close(resolve);
+      mock.closeAllConnections();
+    });
+  }
+});
+
 test('全局 AI：跨项目范围、单项目收窄与权限', async () => {
   const admin = await login('pmo', 'pmo123456');
   const client = await login('hejing', 'pm123456');
 
+  await new Promise((resolve) => setTimeout(resolve, 1600));
   const all = await req('POST', '/api/ai/assistant', {
     cookie: admin.cookie,
     body: { mode: 'portfolio' },

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PMO 项目群控制台 · 演示结束</title>
+<style>
+  :root { --delta: 0s; --bg: #09111f; --fg: #edf4ff; --dim: #9bacc7; --accent: #64d6c5; --blue: #75a7ff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; }
+  body { background: var(--bg); color: var(--fg); font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  body::before { content: ""; position: fixed; inset: 0; background: radial-gradient(circle at 50% 30%, rgba(100,214,197,.14), transparent 42%), linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px); background-size: auto, 48px 48px, 48px 48px; }
+  .stage { position: relative; width: 100%; height: 100%; padding: 96px 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .eyebrow { color: var(--accent); font-size: 21px; letter-spacing: 8px; }
+  h1 { margin-top: 26px; font-size: 72px; letter-spacing: 3px; }
+  .lead { margin-top: 22px; color: var(--dim); font-size: 29px; line-height: 1.7; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; width: 100%; margin-top: 62px; }
+  .card { padding: 28px 24px; min-height: 170px; border: 1px solid rgba(155,172,199,.2); border-radius: 20px; background: rgba(17,30,50,.8); text-align: left; }
+  .card b { color: var(--blue); font-size: 25px; }
+  .card span { display: block; margin-top: 18px; color: var(--dim); font-size: 20px; line-height: 1.65; }
+  .stack { margin-top: 48px; color: #c9d8e9; font-size: 22px; letter-spacing: 2px; }
+  .thanks { margin-top: 40px; color: var(--accent); font-size: 30px; letter-spacing: 8px; }
+  .anim { opacity: 0; transform: translateY(20px); }
+  body.playing .anim { animation: rise .8s cubic-bezier(.2,.7,.2,1) forwards; animation-delay: calc(var(--d,0s) - var(--delta)); }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  #veil { position: fixed; inset: 0; z-index: 99; pointer-events: none; background: var(--bg); opacity: 1; transition: opacity .8s ease .5s; }
+  body.playing #veil { opacity: 0; }
+  .dv-cursor { display: none !important; }
+</style>
+</head>
+<body>
+  <main class="stage">
+    <div class="eyebrow anim" style="--d:.3s">ONE PROGRAM · ONE SOURCE OF TRUTH</div>
+    <h1 class="anim" style="--d:1.0s">让项目执行与项目群治理形成闭环</h1>
+    <p class="lead anim" style="--d:3.0s">从角色待办与项目执行，到会议用品和系统管理</p>
+    <section class="cards">
+      <div class="card anim" style="--d:8.2s"><b>原生技术栈</b><span>JavaScript · SQLite<br>零第三方运行依赖</span></div>
+      <div class="card anim" style="--d:14.5s"><b>安全与权限</b><span>项目授权 · 同源校验<br>AI 外发边界</span></div>
+      <div class="card anim" style="--d:15.3s"><b>数据保障</b><span>审计追踪 · 在线备份<br>一致性恢复</span></div>
+      <div class="card anim" style="--d:16.1s"><b>内网部署</b><span>就绪探针 · 结构化日志<br>优雅停机</span></div>
+    </section>
+    <div class="stack anim" style="--d:8.0s">本地单机部署 · 项目群协作与治理平台</div>
+    <div class="thanks anim" style="--d:20.5s">感谢观看</div>
+  </main>
+  <div id="veil"></div>
+</body>
+</html>

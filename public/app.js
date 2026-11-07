@@ -660,6 +660,7 @@ function toast(msg, kind = 'ok') {
 let scrollMemory = 0;
 async function reload({ keepScroll = true } = {}) {
   if (keepScroll) scrollMemory = window.scrollY;
+  invalidateProgramPlan();
   const [data, resources] = await Promise.all([api('/api/bootstrap'), api('/api/resources')]);
   state.data = data;
   state.resources = resources;
@@ -976,7 +977,7 @@ async function viewOverview() {
 
   if (!s.total) {
     return emptyProgramView(
-      `PROGRAM CONTROL DESK <span class="sep">/</span> 2026 Q${quarter} <span class="sep">/</span> 第 ${week} 周 <span class="sep">/</span> ${program.code}`,
+      `PROGRAM CONTROL DESK <span class="sep">/</span> 2026 Q${quarter} <span class="sep">/</span> 第 ${week} 周 <span class="sep">/</span> ${esc(program.code)}`,
       '项目群<em>控制台</em>',
       `${esc(program.objective)}<br>数据截至 ${today()} ${weekday(today())} · 项目群负责人 ${esc(program.owner)}`
     );
@@ -1169,7 +1170,7 @@ async function viewOverview() {
 
   return `<div class="view-enter">
     ${pageHead({
-      eyebrow: `PROGRAM CONTROL DESK <span class="sep">/</span> 2026 Q${quarter} <span class="sep">/</span> 第 ${week} 周 <span class="sep">/</span> ${program.code}`,
+      eyebrow: `PROGRAM CONTROL DESK <span class="sep">/</span> 2026 Q${quarter} <span class="sep">/</span> 第 ${week} 周 <span class="sep">/</span> ${esc(program.code)}`,
       title: '项目群<em>控制台</em>',
       sub: `${esc(program.objective)}<br>数据截至 ${today()} ${weekday(today())} · 项目群负责人 ${esc(program.owner)}`,
       actions,
@@ -1554,10 +1555,10 @@ function viewMyTasks() {
     const plan = p.quarterPlan;
     if (isPmo) {
       if (wr && wr.status === 'submitted') {
-        tasks.push({ group: 'review', type: '审核周报', title: `${p.name} · 本周周报`, project: p, due: addHours(wr.submitted_at, 48), submittedAt: wr.submitted_at, href: '#/deliverables', note: `提交人 ${wr.author_name || '—'}` });
+        tasks.push({ group: 'review', type: '审核周报', title: `${p.name} · 本周周报`, project: p, due: addHours(wr.submitted_at, 48), submittedAt: wr.submitted_at, href: `#/write/weekly/${p.id}/${week}`, note: `提交人 ${wr.author_name || '—'}` });
       }
       if (plan && plan.status === 'submitted') {
-        tasks.push({ group: 'review', type: '审核计划', title: `${p.name} · 季度计划`, project: p, due: addHours(plan.submitted_at, 48), submittedAt: plan.submitted_at, href: '#/deliverables', note: `提交人 ${plan.author_name || '—'}` });
+        tasks.push({ group: 'review', type: '审核计划', title: `${p.name} · 季度计划`, project: p, due: addHours(plan.submitted_at, 48), submittedAt: plan.submitted_at, href: `#/write/plan/${p.id}/${quarter}`, note: `提交人 ${plan.author_name || '—'}` });
       }
     } else if (isClient) {
       if (wr && ['submitted', 'approved'].includes(wr.status)) {
@@ -1566,7 +1567,13 @@ function viewMyTasks() {
       if (plan && ['submitted', 'approved'].includes(plan.status)) {
         tasks.push({ group: 'watch', type: '查看计划', title: `${p.name} · 季度计划`, project: p, due: plan.submitted_at, href: `#/write/plan/${p.id}/${quarter}`, note: `${plan.status === 'approved' ? '已通过' : '待审核'} · 提交人 ${plan.author_name || '—'}`, watchStatus: plan.status === 'approved' ? '已通过' : '待审核' });
       }
-    } else {
+      if (wr && wr.status === 'approved' && !wr.acceptance_id) {
+        tasks.push({ group: 'accept', type: '确认验收', title: `${p.name} · 本周周报`, project: p, due: wr.reviewed_at || wr.submitted_at, href: `#/write/weekly/${p.id}/${week}`, note: 'PMO 已审核通过，待你登记验收结论' });
+      }
+      if (plan && plan.status === 'approved' && !plan.acceptance_id) {
+        tasks.push({ group: 'accept', type: '确认验收', title: `${p.name} · 季度计划`, project: p, due: plan.reviewed_at || plan.submitted_at, href: `#/write/plan/${p.id}/${quarter}`, note: 'PMO 已审核通过，待你登记验收结论' });
+      }
+    } else if (canEditProject(p)) {
       if (!wr || ['draft', 'rejected'].includes(wr.status)) {
         tasks.push({ group: 'submit', type: '提交周报', title: `${p.name} · 本周周报`, project: p, due: `${week}T23:59:00`, href: `#/write/weekly/${p.id}/${week}`, note: wr?.status === 'rejected' ? '已被退回，需修改重提' : '尚未提交' });
       }
@@ -1600,6 +1607,7 @@ function viewMyTasks() {
   const submit = tasks.filter((t) => t.group === 'submit');
   const review = tasks.filter((t) => t.group === 'review');
   const watch = tasks.filter((t) => t.group === 'watch');
+  const accepts = tasks.filter((t) => t.group === 'accept');
   const nodes = tasks.filter((t) => t.group === 'node');
   const risks = tasks.filter((t) => t.group === 'risk');
   const reviewLate = review.filter(isLate).length;
@@ -1607,11 +1615,12 @@ function viewMyTasks() {
   const nodeLate = nodes.filter(isLate).length;
 
   const row = (t) => {
-    const late = t.group !== 'watch' && new Date(t.due).getTime() < Date.now();
+    const late = !['watch', 'accept'].includes(t.group) && new Date(t.due).getTime() < Date.now();
     const hours = t.submittedAt ? Math.max(0, Math.floor((Date.now() - new Date(t.submittedAt).getTime()) / 3600000)) : 0;
     const day = String(t.due).slice(0, 10);
     const diff = daysDiff(today(), day);
     const dueText = t.group === 'watch' ? (t.watchStatus || '已提交')
+      : t.group === 'accept' ? '待你确认'
       : t.group === 'review'
         ? `已等待 ${hours}h${late ? ' · 超时' : ''}`
         : diff < 0 ? `逾期 ${Math.abs(diff)} 天` : diff === 0 ? '今天' : `${diff} 天后`;
@@ -1641,13 +1650,13 @@ function viewMyTasks() {
     })}
 
     <div class="pulse" style="grid-template-columns:repeat(4,1fr)">
-      <div class="pulse-cell"><span class="pulse-label">${isPmo ? '待审核' : isClient ? '待查看' : '待提交'}</span><div class="pulse-value">${isPmo ? review.length : isClient ? watch.length : submit.length}<span class="unit">项</span></div><span class="pulse-note">${isPmo ? (reviewLate ? `${reviewLate} 项已超过 48 小时时限` : '审核都在时限内') : isClient ? (watch.length ? '乙方已提交，等待你查看' : '暂时没有新的提交') : (submitLate ? `${submitLate} 项已过截止时间` : '都在截止时间前')}</span></div>
+      <div class="pulse-cell"><span class="pulse-label">${isPmo ? '待审核' : isClient ? '待查看 / 确认' : '待提交'}</span><div class="pulse-value">${isPmo ? review.length : isClient ? watch.length + accepts.length : submit.length}<span class="unit">项</span></div><span class="pulse-note">${isPmo ? (reviewLate ? `${reviewLate} 项已超过 48 小时时限` : '审核都在时限内') : isClient ? (accepts.length ? `${accepts.length} 项待你登记验收结论` : watch.length ? '乙方已提交，等待你查看' : '暂时没有新的提交') : (submitLate ? `${submitLate} 项已过截止时间` : '都在截止时间前')}</span></div>
       <div class="pulse-cell"><span class="pulse-label">临近节点</span><div class="pulse-value">${nodes.length}<span class="unit">项</span></div><span class="pulse-note">${nodeLate ? `${nodeLate} 项已逾期` : '未来 30 天关口与 14 天里程碑'}</span></div>
       <div class="pulse-cell"><span class="pulse-label">高风险</span><div class="pulse-value">${risks.length}<span class="unit">项</span></div><span class="pulse-note">敞口 ≥ 16</span></div>
       <div class="pulse-cell"><span class="pulse-label">涉及项目</span><div class="pulse-value">${projects.length}<span class="unit">个</span></div><span class="pulse-note">${isPmo ? '全项目群' : '你负责的项目'}</span></div>
     </div>
 
-    ${isPmo ? section('待你审核', review, '没有待审核的周报或计划') : isClient ? section('待你查看', watch, '本周没有待查看的提交') : section('待你提交', submit, '本周的周报和计划都已提交')}
+    ${isPmo ? section('待你审核', review, '没有待审核的周报或计划') : isClient ? `${section('待你确认验收', accepts, '没有待确认验收的交付物')}${section('待你查看', watch, '本周没有待查看的提交')}` : section('待你提交', submit, '本周的周报和计划都已提交')}
     ${section('临近节点', nodes, '未来一个月没有需要处理的关口或里程碑')}
     ${section('高敞口风险', risks, '没有敞口超过 16 的风险')}
   </div>`;
@@ -1678,7 +1687,7 @@ function viewProjects() {
 
   return `<div class="view-enter">
     ${pageHead({
-      eyebrow: `PORTFOLIO REGISTER / ${d.program.code}`,
+      eyebrow: `PORTFOLIO REGISTER / ${esc(d.program.code)}`,
       title: '项目台账',
       sub: '项目群内全部项目的进度、成本、风险与责任人的单一事实来源。健康度由计划偏差、成本绩效、风险敞口和里程碑逾期综合计算。',
       actions: `<button class="btn btn--quiet" data-action="goto-report">${ICONS.copy}周报</button>
@@ -1726,7 +1735,7 @@ function projectRows() {
     <td class="c-project">
       <span class="pcode">${esc(p.code)} <span class="priority${p.priority === 'P0' ? ' priority--p0' : ''}">· ${esc(p.priority)}</span></span>
       <span class="pname">${esc(p.name)}</span>
-      <span class="pcode" style="letter-spacing:.02em">乙方 ${esc(p.pm || '未指定')} · 甲方 ${esc(p.client_pm || '未指定')} · ${p.team_size} 人</span>
+      <span class="pcode" style="letter-spacing:.02em">乙方 ${esc(p.pm || '未指定')}${p.vendor_pm_id ? '' : ' <span class="sla-tag">未指定填报人</span>'} · 甲方 ${esc(p.client_pm || '未指定')} · ${p.team_size} 人</span>
     </td>
     <td class="c-stage cell-nowrap"><span class="chip">${esc(p.stage)}</span></td>
     <td class="c-progress">${trackRow(p.progress, { expected: p.health.expected })}</td>
@@ -1745,8 +1754,9 @@ function projectTabsHTML(p, active) {
 }
 
 function deliveryAction(p, kind, period, item, late = false) {
-  const editable = !item || ['draft', 'rejected'].includes(item.status);
-  const label = !item ? (late ? '补报' : '填写') : item.status === 'draft' ? '继续填写' : item.status === 'rejected' ? '修改重提' : '查看';
+  const canEdit = canEditProject(p);
+  const editable = canEdit && (!item || ['draft', 'rejected'].includes(item.status));
+  const label = !canEdit ? '查看' : !item ? (late ? '补报' : '填写') : item.status === 'draft' ? '继续填写' : item.status === 'rejected' ? '修改重提' : '查看';
   return `<a class="btn btn--sm ${editable && !late ? 'btn--solid' : 'btn--quiet'}" href="#/write/${kind}/${p.id}/${period}">${label}</a>`;
 }
 
@@ -2027,8 +2037,8 @@ function projectPlanHTML(p, plan, canManage) {
     const baseline = t.baseline_start
       ? `<span class="plan-baseline" style="left:${planPct(t.baseline_start, range)}%;width:${planSpan(t.baseline_start, t.baseline_end || t.baseline_start, range)}%" title="基线 ${t.baseline_start} ~ ${t.baseline_end || ''}"></span>` : '';
     const bar = isMs
-      ? `<span class="plan-ms ${t.critical ? 'is-critical' : ''}" style="left:${barLeft}%" title="${t.name} · ${t.start_date}"></span>`
-      : `<span class="plan-bar ${t.isSummary ? 'is-summary' : ''} ${t.critical ? 'is-critical' : ''}" style="left:${barLeft}%;width:${barWidth}%" title="${t.name} · ${t.start_date} ~ ${t.end_date} · ${t.duration} 个工作日 · ${t.progress}%"><i style="width:${t.progress}%"></i></span>`;
+      ? `<span class="plan-ms ${t.critical ? 'is-critical' : ''}" style="left:${barLeft}%" title="${esc(t.name)} · ${t.start_date}"></span>`
+      : `<span class="plan-bar ${t.isSummary ? 'is-summary' : ''} ${t.critical ? 'is-critical' : ''}" style="left:${barLeft}%;width:${barWidth}%" title="${esc(t.name)} · ${t.start_date} ~ ${t.end_date} · ${t.duration} 个工作日 · ${t.progress}%"><i style="width:${t.progress}%"></i></span>`;
     const name = canManage
       ? `<button class="plan-name-btn" data-action="plan-task-edit" data-id="${t.id}">${esc(t.name)}</button>`
       : `<span>${esc(t.name)}</span>`;
@@ -3345,6 +3355,7 @@ async function viewWrite() {
       mdView: (() => { try { return localStorage.getItem('pmo.mdview') || 'split'; } catch { return 'split'; } })(),
       dirty: false,
       saving: false,
+      savePromise: null,
       lastSaved: data.item?.updated_at || null,
       timer: null,
     };
@@ -3440,7 +3451,7 @@ function editorHTML(project) {
       </details>`).join('')
     : '<p class="side-empty">提交后生成版本记录，便于对比修改内容。</p>';
 
-  const canComment = Boolean(ed.item) && (ed.canEdit || isPmo);
+  const canComment = Boolean(ed.item);
 
   return `<div class="view-enter editor${ed.kind === 'weekly' ? ' editor--weekly' : ''}">
     <a class="crumb" href="#/deliverables">← 计划与周报 <span>/</span> ${kindLabel}</a>
@@ -3579,39 +3590,54 @@ function markEditorDirty() {
 async function saveEditor(force = false) {
   const ed = state.editor;
   if (!ed || !ed.canEdit) return ed?.item || null;
-  if (ed.saving) return ed.item;
-  if (!ed.dirty && !force) return ed.item;
-  ed.saving = true;
+  if (ed.savePromise) {
+    const item = await ed.savePromise;
+    if (!item || state.editor !== ed) return null;
+    if (!force || !ed.dirty) return item;
+    return saveEditor(true);
+  }
+  if (!ed.dirty) return ed.item;
   clearTimeout(ed.timer);
   const payload = JSON.stringify(ed.content);
-  setSaveStatus('保存中…');
-  try {
-    let item = ed.item;
-    if (item) {
-      const r = await api(`/api/deliverables/${ed.kind}/${item.id}`, { method: 'PATCH', body: { content: JSON.parse(payload) } });
-      item = r.item;
-    } else {
-      const r = await api('/api/deliverables', {
-        method: 'POST',
-        body: { kind: ed.kind, project_id: ed.projectId, period: ed.period, content: JSON.parse(payload) },
-      });
-      item = r.item;
+  const pending = (async () => {
+    ed.saving = true;
+    setSaveStatus('保存中…');
+    try {
+      let item = ed.item;
+      if (item) {
+        const r = await api(`/api/deliverables/${ed.kind}/${item.id}`, { method: 'PATCH', body: { content: JSON.parse(payload) } });
+        item = r.item;
+      } else {
+        const r = await api('/api/deliverables', {
+          method: 'POST',
+          body: { kind: ed.kind, project_id: ed.projectId, period: ed.period, content: JSON.parse(payload) },
+        });
+        item = r.item;
+      }
+      ed.item = item;
+      const stillDirty = JSON.stringify(ed.content) !== payload;
+      ed.dirty = stillDirty;
+      ed.lastSaved = new Date().toISOString();
+      if (state.editor === ed) {
+        setSaveStatus(`已保存 ${fmtDateTime(ed.lastSaved)}${stillDirty ? '（有新修改）' : ''}`);
+        updateEditorChip();
+      }
+      if (stillDirty) ed.timer = setTimeout(() => { saveEditor(); }, 800);
+      return item;
+    } catch (e) {
+      ed.dirty = true;
+      if (state.editor === ed) setSaveStatus('保存失败');
+      toast(e.message, 'err');
+      return null;
+    } finally {
+      ed.saving = false;
+      if (ed.savePromise === pending) ed.savePromise = null;
     }
-    ed.item = item;
-    const stillDirty = JSON.stringify(ed.content) !== payload;
-    ed.dirty = stillDirty;
-    ed.lastSaved = new Date().toISOString();
-    setSaveStatus(`已保存 ${fmtDateTime(ed.lastSaved)}${stillDirty ? '（有新修改）' : ''}`);
-    updateEditorChip();
-    if (stillDirty) ed.timer = setTimeout(() => { saveEditor(); }, 800);
-    return item;
-  } catch (e) {
-    setSaveStatus('保存失败');
-    toast(e.message, 'err');
-    return null;
-  } finally {
-    ed.saving = false;
-  }
+  })();
+  ed.savePromise = pending;
+  const item = await pending;
+  if (item && force && ed.dirty && state.editor === ed) return saveEditor(true);
+  return item;
 }
 
 function openHelpArticleModal(article) {
@@ -3789,7 +3815,13 @@ async function submitEditorComment() {
   const box = $('#editor-comment');
   const body = box ? box.value.trim() : '';
   if (!body) return;
-  if (ed.dirty) await saveEditor(true);
+  if (ed.dirty || ed.savePromise) {
+    const saved = await saveEditor(true);
+    if (!saved) {
+      toast('草稿未保存，留言未发送', 'err');
+      return;
+    }
+  }
   await api(`/api/deliverables/${ed.kind}/${ed.item.id}/comments`, { method: 'POST', body: { body } });
   box.value = '';
   await render();
@@ -4009,9 +4041,11 @@ async function viewDeliverables() {
     const editHref = `data-action="dlv-edit" data-project="${p.id}" data-kind="${kind}" data-period="${period}"`;
     let action;
     if (!item) {
-      action = mine
-        ? `<button class="btn btn--sm btn--quiet" ${editHref}>填写</button>`
-        : '<span class="placeholder">—</span>';
+      action = !p.vendor_pm_id
+        ? '<span class="placeholder">未指定填报人</span>'
+        : mine
+          ? `<button class="btn btn--sm btn--quiet" ${editHref}>填写</button>`
+          : '<span class="placeholder">—</span>';
     } else if (isPmo && status === 'submitted') {
       action = `<button class="btn btn--sm btn--solid" data-action="dlv-open" data-project="${p.id}">审核</button>`;
     } else if (item.restricted) {
@@ -4053,7 +4087,11 @@ async function viewDeliverables() {
       title: '计划与周报',
       sub: isPmo
         ? '各项目提交的周报与计划在这里汇总。审核通过的内容会进入项目群周报和项目群工作计划的自动汇总，退回时必须写明原因。'
-        : '维护你负责项目的周报与计划，提交后由 PMO 审核。被退回的内容修改后可重新提交，已提交的内容不能直接改动。',
+        : me.role === 'pm' && me.party === '甲方'
+          ? '查看乙方提交的周报与计划，可在右侧沟通记录留言；PMO 审核通过后由你登记验收结论。'
+          : me.role === 'pm'
+            ? '维护你负责项目的周报与计划，提交后由 PMO 审核。被退回的内容修改后可重新提交，已提交的内容不能直接改动。'
+            : '查看你参与项目的周报与计划；填报由乙方项目经理维护。',
       actions: `<span class="role-pill">${isPmo ? ICONS.shield : ''}${esc(roleText(me.role, me.party))} · ${esc(me.name)}</span>`,
     })}
 
@@ -4263,12 +4301,29 @@ async function reviewDeliverable(decision) {
   toast(decision === 'approve' ? '已通过审核，进度已同步到台账' : '已退回项目组');
 }
 
+let programPlanRequest = 0;
+
+function invalidateProgramPlan() {
+  programPlanRequest += 1;
+  state.programPlan = null;
+}
+
+function programPlanCacheKey(period) {
+  return `${state.me?.id || 'anonymous'}:${state.programId || state.data?.currentProgramId || 'default'}:${period}`;
+}
+
 async function viewProgramPlan() {
   const period = state.planPeriod || state.data.workflow.quarter;
-  if (!state.programPlan || state.programPlan.label !== period) {
+  const cacheKey = programPlanCacheKey(period);
+  if (!state.programPlan || state.programPlan.cacheKey !== cacheKey) {
+    const request = ++programPlanRequest;
     try {
-      state.programPlan = await api(`/api/program-plan?period=${encodeURIComponent(period)}`);
+      const plan = await api(`/api/program-plan?period=${encodeURIComponent(period)}`);
+      const currentPeriod = state.planPeriod || state.data.workflow.quarter;
+      if (request !== programPlanRequest || cacheKey !== programPlanCacheKey(currentPeriod)) return '';
+      state.programPlan = { ...plan, cacheKey };
     } catch (e) {
+      if (request !== programPlanRequest) return '';
       return `<div class="view-enter">${pageHead({ eyebrow: 'PROGRAM PLAN', title: '项目群计划', sub: esc(e.message) })}</div>`;
     }
   }
@@ -6052,7 +6107,9 @@ function openSupplyItemModal(item) {
   });
 }
 
+let renderRequest = 0;
 async function render() {
+  const request = ++renderRequest;
   renderNav();
   const v = $('#view');
   let html = '';
@@ -6077,6 +6134,7 @@ async function render() {
     case 'supplies': html = await viewSupplies(); break;
     default: html = viewOverview();
   }
+  if (request !== renderRequest) return;
   v.innerHTML = html;
   v.querySelectorAll('thead th').forEach((th) => {
     if (!th.hasAttribute('scope')) th.setAttribute('scope', 'col');
@@ -6987,11 +7045,16 @@ async function handleAction(action, el) {
       }
       break;
     }
-    case 'dlv-back':
-      if (state.editor?.dirty) await saveEditor(true);
+    case 'dlv-back': {
+      const ed = state.editor;
+      if (ed && (ed.dirty || ed.savePromise)) {
+        const saved = await saveEditor(true);
+        if (!saved) break;
+      }
       state.editor = null;
       navTo('#/deliverables');
       break;
+    }
     case 'dlv-open': {
       const projectId = Number(el.dataset.project);
       const project = state.dlvData?.projects.find((x) => x.id === projectId);
@@ -7319,12 +7382,12 @@ async function handleAction(action, el) {
       break;
     case 'plan-prev':
       state.planPeriod = shiftQuarter(state.planPeriod || state.data.workflow.quarter, -1);
-      state.programPlan = null;
+      invalidateProgramPlan();
       render();
       break;
     case 'plan-next':
       state.planPeriod = shiftQuarter(state.planPeriod || state.data.workflow.quarter, 1);
-      state.programPlan = null;
+      invalidateProgramPlan();
       render();
       break;
     case 'plan-sec': {
@@ -7341,9 +7404,17 @@ async function handleAction(action, el) {
       }
       break;
     }
-    case 'plan-download':
-      window.location.href = `/api/program-plan.md?period=${encodeURIComponent(state.planPeriod || state.data.workflow.quarter)}`;
+    case 'plan-download': {
+      const plan = state.programPlan;
+      if (!plan?.markdown) break;
+      const blob = new Blob([plan.markdown], { type: 'text/markdown;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `pmo-plan-${plan.label}.md`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
       break;
+    }
     case 'plan-print':
       window.print();
       break;
@@ -7403,9 +7474,14 @@ async function handleAction(action, el) {
       state.dlv.onlyMine = null;
       renderLogin();
       break;
-    case 'demo-login':
-      await doLogin(el.dataset.user, el.dataset.user === 'pmo' ? 'pmo123456' : 'pm123456');
+    case 'demo-login': {
+      const ok = await doLogin(el.dataset.user, el.dataset.user === 'pmo' ? 'pmo123456' : 'pm123456');
+      if (!ok) {
+        const err = $('#login-error');
+        if (err) err.innerHTML = '演示账号的口令已被管理员修改，一键登录不可用。请用上方表单登录，或联系 PMO 在「账号与权限」里重置。';
+      }
       break;
+    }
     case 'modal-close':
       closeModal();
       break;
@@ -7627,9 +7703,22 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+let restoringEditorHash = false;
 window.addEventListener('hashchange', async () => {
-  if (state.editor?.dirty) await saveEditor(true);
-  if (state.editor?.timer) clearTimeout(state.editor.timer);
+  if (restoringEditorHash) {
+    restoringEditorHash = false;
+    return;
+  }
+  const ed = state.editor;
+  if (ed && state.route === 'write' && (ed.dirty || ed.savePromise)) {
+    const saved = await saveEditor(true);
+    if (!saved) {
+      restoringEditorHash = true;
+      location.hash = `#/write/${ed.kind}/${ed.projectId}/${ed.period}`;
+      return;
+    }
+  }
+  if (ed?.timer) clearTimeout(ed.timer);
   state.editor = null;
   const r = parseRoute();
   state.route = r.route;
@@ -7642,6 +7731,12 @@ window.addEventListener('hashchange', async () => {
 /* ---------------------------------------------------------------- boot --- */
 
 async function renderLogin(message = '') {
+  renderRequest += 1;
+  invalidateProgramPlan();
+  if (state.editor?.timer) clearTimeout(state.editor.timer);
+  state.editor = null;
+  state.report = null;
+  state.reportSnapshot = null;
   document.body.classList.add('is-login');
   state.data = null;
   state.dlvData = null;
@@ -7691,7 +7786,7 @@ async function renderLogin(message = '') {
             <button type="button" data-action="demo-login" data-user="hejing"><b>何静 · 甲方项目经理</b><i>中台项目的业主侧负责人</i></button>
           </div>
         </div>
-        <p class="login-hint">pmo / pmo123456　·　甲方 / 乙方项目经理 / pm123456</p>` : ''}
+        <p class="login-hint">默认口令：pmo / pmo123456　·　甲方 / 乙方项目经理 / pm123456（口令被修改后请用表单登录）</p>` : ''}
       </section>
     </div>`;
   setTimeout(() => $('#login-username')?.focus(), 80);
@@ -7711,7 +7806,7 @@ async function doLogin(username, password) {
     const j = await res.json();
     if (!res.ok) {
       if (err) err.textContent = j.error || '登录失败';
-      return;
+      return false;
     }
     state.me = j.user;
     state.dlv.onlyMine = null;
@@ -7722,8 +7817,10 @@ async function doLogin(username, password) {
     state.params = r.params;
     await render();
     toast(`已登录：${j.user.name}`);
+    return true;
   } catch (e) {
     if (err) err.textContent = e.message || '无法连接服务端';
+    return false;
   } finally {
     state.loginBusy = false;
   }

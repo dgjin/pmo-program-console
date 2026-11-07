@@ -3357,9 +3357,8 @@ body.is-login .grain { opacity: .22; }
 .rail-toggle:hover { color: #f2eee3; border-color: rgba(242, 238, 227, .42); background: rgba(255, 255, 255, .04); }
 .rail-toggle svg { width: 13px; height: 13px; transition: transform .24s var(--ease); }
 
-body.is-rail-collapsed { --rail-w: 78px; }
-
 @media (min-width: 901px) {
+  body.is-rail-collapsed { --rail-w: 78px; }
   body.is-rail-collapsed .rail-head {
     flex-direction: column;
     justify-content: center;
@@ -3506,15 +3505,17 @@ body.is-rail-collapsed { --rail-w: 78px; }
 .nav-item:hover .nav-ico { color: rgba(242, 238, 227, .8); }
 .nav-item.is-active .nav-ico { color: var(--oxblood); }
 
-body.is-rail-collapsed .nav-item {
-  justify-content: center;
-  padding: 12px 0;
-  gap: 0;
+@media (min-width: 901px) {
+  body.is-rail-collapsed .nav-item {
+    justify-content: center;
+    padding: 12px 0;
+    gap: 0;
+  }
+  body.is-rail-collapsed .nav-ico { width: 20px; height: 20px; color: rgba(242, 238, 227, .58); }
+  body.is-rail-collapsed .nav-ico svg { width: 19px; height: 19px; }
+  body.is-rail-collapsed .nav-item:hover .nav-ico,
+  body.is-rail-collapsed .nav-item.is-active .nav-ico { color: var(--oxblood); }
 }
-body.is-rail-collapsed .nav-ico { width: 20px; height: 20px; color: rgba(242, 238, 227, .58); }
-body.is-rail-collapsed .nav-ico svg { width: 19px; height: 19px; }
-body.is-rail-collapsed .nav-item:hover .nav-ico,
-body.is-rail-collapsed .nav-item.is-active .nav-ico { color: var(--oxblood); }
 
 .rail-tip {
   position: fixed;
@@ -3687,9 +3688,8 @@ body.is-rail-collapsed .nav-item.is-active .nav-ico { color: var(--oxblood); }
   padding: 5px 6px;
   font-size: 11px;
 }
-body.is-rail-collapsed .rail-program-switch { display: none; }
-@media (max-width: 900px) {
-  .rail-program-switch { display: none; }
+@media (min-width: 901px) {
+  body.is-rail-collapsed .rail-program-switch { display: none; }
 }
 
 /* --------------------------------------------------------------- help/AI --- */
@@ -4155,11 +4155,13 @@ body.is-rail-collapsed .rail-program-switch { display: none; }
 .rail-program strong { font-size: 12px; }
 .rail-meta { font-size: 9px; }
 
-body.is-rail-collapsed .rail { padding-top: 18px; }
-body.is-rail-collapsed .rail-head { padding-bottom: 12px; }
-body.is-rail-collapsed .nav-item { padding: 8px 0; }
-body.is-rail-collapsed .nav-sep { margin: 8px 18px; }
-body.is-rail-collapsed .rail-foot { padding-top: 10px; }
+@media (min-width: 901px) {
+  body.is-rail-collapsed .rail { padding-top: 18px; }
+  body.is-rail-collapsed .rail-head { padding-bottom: 12px; }
+  body.is-rail-collapsed .nav-item { padding: 8px 0; }
+  body.is-rail-collapsed .nav-sep { margin: 8px 18px; }
+  body.is-rail-collapsed .rail-foot { padding-top: 10px; }
+}
 
 @media (max-height: 720px) {
   .rail-program,
@@ -4363,4 +4365,68 @@ body.is-rail-collapsed .rail-foot { padding-top: 10px; }
   font-weight: 500;
   color: var(--ink-2);
   letter-spacing: .02em;
+}
+
+@media (max-width: 900px) {
+  body.is-rail-collapsed { --rail-w: 0px; }
+  .rail,
+  body.is-rail-collapsed .rail {
+    padding: 10px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 12px;
+  }
+  .rail-head,
+  body.is-rail-collapsed .rail-head { padding: 0; }
+  .rail-title { display: none; }
+  .rail-nav { flex: none; flex-direction: row; padding: 0; gap: 2px; }
+  .nav-item,
+  body.is-rail-collapsed .nav-item {
+    justify-content: center;
+    padding: 8px 10px;
+    gap: 7px;
+  }
+  .nav-item .lbl,
+  body.is-rail-collapsed .nav-item .lbl { display: inline; font-size: 13px; }
+  .nav-item .idx, .nav-item .cnt, .nav-sep { display: none; }
+  .nav-item.is-active { border-left: 0; box-shadow: none; }
+  .rail-program-switch,
+  body.is-rail-collapsed .rail-program-switch {
+    display: block;
+    flex: 0 0 150px;
+    width: 150px;
+    padding: 0;
+    margin: 0;
+    border: 0;
+  }
+  .rail-switch-label { display: none; }
+  .rail-switch-select { height: 34px; font-size: 11px; }
+  .rail-foot,
+  body.is-rail-collapsed .rail-foot {
+    display: flex;
+    flex: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    gap: 0;
+  }
+  .rail-user,
+  body.is-rail-collapsed .rail-user {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    padding: 0;
+    margin: 0;
+    border: 0;
+  }
+  .rail-user-info, .rail-user .avatar, .rail-program, .rail-meta { display: none; }
+  .rail-logout,
+  body.is-rail-collapsed .rail-logout {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    padding: 8px;
+  }
+  .rail-logout svg { width: 16px; height: 16px; }
 }

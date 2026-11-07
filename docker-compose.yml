@@ -13,6 +13,19 @@ services:
       PMO_ADMIN_USERNAME: ${PMO_ADMIN_USERNAME:-admin}
       PMO_ADMIN_NAME: ${PMO_ADMIN_NAME:-系统管理员}
       PMO_ADMIN_PASSWORD: ${PMO_ADMIN_PASSWORD:-}
+      PMO_LLM_ALLOWED_HOSTS: ${PMO_LLM_ALLOWED_HOSTS:-}
+      PMO_LLM_BASE_URL: ${PMO_LLM_BASE_URL:-}
+      PMO_LLM_MODEL: ${PMO_LLM_MODEL:-gpt-4o-mini}
+      PMO_LLM_API_KEY: ${PMO_LLM_API_KEY:-}
     volumes:
       - ./data:/data
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s
     restart: unless-stopped

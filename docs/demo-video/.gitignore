@@ -1,0 +1,10 @@
+# 录屏产物（体积大，不入库）
+audio/*.mp3
+audio/*.txt
+videos/
+out/
+diag/
+*.mp4
+
+# 浏览器登录态
+.auth-state.json

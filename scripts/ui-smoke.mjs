@@ -178,6 +178,16 @@ async function main() {
   if (!(await ev(`Boolean(document.querySelector('.plan-grid'))`))) throw new Error('计划表没有渲染');
   await auditPage('计划页');
 
+  const escapedTask = await ev(`fetch('/api/projects/1/plan/tasks', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-PMO-Program': '1' },
+    body: JSON.stringify({ name: '转义任务" data-smoke-escaped="yes', start_date: '2026-11-05', duration: 1 })
+  }).then(async r => ({ ok: r.ok, body: await r.json() }))`);
+  if (!escapedTask.ok) throw new Error(`无法建立属性转义测试任务：${JSON.stringify(escapedTask.body)}`);
+  await send('Page.navigate', { url: `${BASE}/?smoke=2-escaped#/projects/1/plan` });
+  await wait(1200);
+  if (await ev(`Boolean(document.querySelector('[data-smoke-escaped]'))`)) throw new Error('任务名称把属性注入到了计划条');
+  if (!(await ev(`[...document.querySelectorAll('.plan-bar, .plan-ms')].some(el => el.title.includes('转义任务" data-smoke-escaped="yes'))`))) throw new Error('转义后的任务提示没有保留原始名称');
+
   await send('Page.navigate', { url: `${BASE}/?smoke=3#/overview` });
   await wait(1400);
   if (!(await ev(`Boolean(document.querySelector('.score-list'))`))) throw new Error('总览组合优先级没有渲染');
@@ -224,6 +234,80 @@ async function main() {
   if ((await ev(`document.querySelectorAll('.editor-main textarea[data-editor-field]').length`)) !== 1) throw new Error('周报编辑器出现了重复输入区');
   if ((await ev(`document.querySelectorAll('.md-tool').length`)) < 10) throw new Error('Markdown 工具栏不完整');
   await auditPage('周报 Markdown 编辑页');
+
+  await send('Page.navigate', { url: `${BASE}/?smoke=7-save#/write/weekly/5/2026-11-02` });
+  await wait(1200);
+  if (!(await ev(`Boolean(document.querySelector('[data-action="editor-save"]'))`))) throw new Error('保存回归需要一份可编辑草稿');
+  await ev(`(() => {
+    window.__smokeOriginalFetch = window.fetch;
+    window.__smokeCommentPosts = 0;
+    window.fetch = (input, opts = {}) => {
+      const url = String(input);
+      if (opts.method === 'PATCH' && url.includes('/api/deliverables/')) {
+        return Promise.resolve(new Response(JSON.stringify({ error: '模拟保存失败' }), { status: 500, headers: { 'Content-Type': 'application/json' } }));
+      }
+      if (opts.method === 'POST' && url.includes('/comments')) window.__smokeCommentPosts += 1;
+      return window.__smokeOriginalFetch(input, opts);
+    };
+    const ta = document.querySelector('#ef-markdown');
+    ta.value += '\\n\\n保存失败保护回归';
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-action="dlv-back"]').click();
+    return true;
+  })()`);
+  await wait(450);
+  if (!(await ev(`location.hash.startsWith('#/write/')`))) throw new Error('保存失败后仍然离开了编辑页');
+  if (!(await ev(`document.querySelector('#ef-markdown')?.value.includes('保存失败保护回归')`))) throw new Error('保存失败后丢失了脏草稿');
+  if (!(await ev(`document.querySelector('#save-status')?.textContent.includes('保存失败')`))) throw new Error('保存失败状态没有显示');
+  await ev(`(() => {
+    document.querySelector('#editor-comment').value = '保存失败时不应发送';
+    document.querySelector('[data-action="editor-comment"]').click();
+    return true;
+  })()`);
+  await wait(400);
+  if ((await ev(`window.__smokeCommentPosts`)) !== 0) throw new Error('草稿保存失败后仍然发送了评论');
+
+  await ev(`(() => {
+    window.fetch = window.__smokeOriginalFetch;
+    document.querySelector('[data-action="editor-save"]').click();
+    return true;
+  })()`);
+  await waitFor(async () => (await ev(`document.querySelector('#save-status')?.textContent || ''`)).includes('已保存'), 5000, '恢复后保存草稿');
+  await ev(`(() => {
+    document.querySelector('#toasts').innerHTML = '';
+    window.__smokePatchBodies = [];
+    window.__smokeReleaseFirstPatch = null;
+    window.fetch = async (input, opts = {}) => {
+      const url = String(input);
+      if (opts.method === 'PATCH' && url.includes('/api/deliverables/')) {
+        window.__smokePatchBodies.push(JSON.parse(opts.body).content.markdown);
+        if (window.__smokePatchBodies.length === 1) {
+          await new Promise(resolve => { window.__smokeReleaseFirstPatch = resolve; });
+        }
+      }
+      return window.__smokeOriginalFetch(input, opts);
+    };
+    const ta = document.querySelector('#ef-markdown');
+    ta.value += '\\n\\n保存期间第一版';
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-action="editor-save"]').click();
+    return true;
+  })()`);
+  await waitFor(async () => (await ev(`window.__smokePatchBodies.length`)) === 1, 5000, '第一个保存请求');
+  await ev(`(() => {
+    const ta = document.querySelector('#ef-markdown');
+    ta.value += '\\n\\n保存期间第二版';
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-action="editor-save"]').click();
+    return true;
+  })()`);
+  await wait(180);
+  if (await ev(`[...document.querySelectorAll('.toast')].some(el => el.textContent === '草稿已保存')`)) throw new Error('进行中的保存被误报为成功');
+  await ev(`window.__smokeReleaseFirstPatch()`);
+  await waitFor(async () => (await ev(`window.__smokePatchBodies.length`)) >= 2, 5000, '强制保存继续保存新修改');
+  await waitFor(async () => (await ev(`document.querySelector('#save-status')?.textContent || ''`)).includes('已保存'), 5000, '第二版保存完成');
+  if (!(await ev(`window.__smokePatchBodies[1].includes('保存期间第二版')`))) throw new Error('第二次保存没有携带最新草稿');
+  await ev(`window.fetch = window.__smokeOriginalFetch`);
 
   await send('Page.navigate', { url: `${BASE}/?smoke=8#/meeting` });
   await wait(1200);
@@ -272,6 +356,56 @@ async function main() {
   if (await ev(`Boolean(document.querySelector('.report-snapshot-bar'))`)) throw new Error('返回本周后仍停留在历史快照');
   await auditPage('项目群周报页');
 
+  await ev(`document.querySelector('[data-action="report-tab"][data-value="plan"]').click()`);
+  await waitFor(async () => (await ev(`document.querySelector('.sheet-title')?.textContent || ''`)).includes('Q4'), 5000, 'Q4 项目群计划');
+  await ev(`(() => {
+    window.__smokePlanOriginalFetch = window.fetch;
+    window.__smokeQ3Started = false;
+    window.__smokeReleaseQ3 = null;
+    window.fetch = async (input, opts = {}) => {
+      const response = await window.__smokePlanOriginalFetch(input, opts);
+      if (String(input).includes('/api/program-plan?') && String(input).includes('2026-Q3')) {
+        window.__smokeQ3Started = true;
+        await new Promise(resolve => { window.__smokeReleaseQ3 = resolve; });
+      }
+      return response;
+    };
+    document.querySelector('[data-action="plan-prev"]').click();
+    return true;
+  })()`);
+  await waitFor(async () => await ev(`window.__smokeQ3Started`), 5000, '延迟的 Q3 计划请求');
+  await ev(`document.querySelector('[data-action="plan-next"]').click()`);
+  await wait(250);
+  await ev(`window.__smokeReleaseQ3()`);
+  await wait(450);
+  if (!(await ev(`document.querySelector('.sheet-title')?.textContent.includes('Q4')`))) throw new Error('过期的 Q3 响应覆盖了当前 Q4 计划');
+  await ev(`window.fetch = window.__smokePlanOriginalFetch`);
+
+  const secondProgram = await ev(`(async () => {
+    const created = await fetch('/api/programs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-PMO-Program': '1' },
+      body: JSON.stringify({ code: 'PGM-UI-SCOPE', name: '界面缓存隔离项目群', owner: '测试', objective: '验证缓存范围' })
+    }).then(r => r.json());
+    if (!created.id) return created;
+    const moved = await fetch('/api/projects/9', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-PMO-Program': '1' },
+      body: JSON.stringify({ program_id: created.id })
+    });
+    return { id: created.id, ok: moved.ok, error: moved.ok ? '' : await moved.text() };
+  })()`);
+  if (!secondProgram.id || !secondProgram.ok) throw new Error(`无法建立跨项目群缓存场景：${JSON.stringify(secondProgram)}`);
+  await send('Page.navigate', { url: `${BASE}/?smoke=8-plan-scope#/report` });
+  await wait(1200);
+  await ev(`document.querySelector('[data-action="report-tab"][data-value="plan"]').click()`);
+  await waitFor(async () => (await ev(`document.querySelector('.sheet-title')?.textContent || ''`)).includes('2026 数字化转型项目群'), 5000, '原项目群计划');
+  await ev(`(() => {
+    const select = document.querySelector('#program-select');
+    select.value = '${secondProgram.id}';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  await waitFor(async () => (await ev(`document.querySelector('.sheet-title')?.textContent || ''`)).includes('界面缓存隔离项目群'), 5000, '切换后的项目群计划');
+
   await send('Page.navigate', { url: `${BASE}/?smoke=8#/admin` });
   await wait(1200);
   if (!(await ev(`[...document.querySelectorAll('#user-role-filter option')].some(o => o.value === 'client_member')`))) throw new Error('用户角色筛选缺少甲方项目成员');
@@ -295,8 +429,68 @@ async function main() {
   if ((await ev(`document.querySelectorAll('.chat-msg').length`)) < 2) throw new Error('全局 AI 没有返回结果');
   await auditPage('全局 AI 页');
 
+  await ev(`localStorage.setItem('pmo.rail.collapsed', '1')`);
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await send('Page.navigate', { url: `${BASE}/?smoke=mobile#/overview` });
+  await wait(1400);
+  if ((await ev(`getComputedStyle(document.querySelector('.rail')).overflowX`)) !== 'auto') throw new Error('390px 下侧栏不能横向滚动');
+  if ((await ev(`document.documentElement.scrollWidth`)) > 391) throw new Error('390px 总览出现页面级横向溢出');
+  if ((await ev(`getComputedStyle(document.querySelector('#rail-program-switch')).display`)) === 'none') throw new Error('移动端无法切换项目群');
+  if ((await ev(`document.querySelectorAll('#program-select option').length`)) < 2) throw new Error('移动端项目群切换选项不完整');
+  await ev(`document.querySelector('#rail-nav .nav-item:last-of-type').scrollIntoView({ block: 'nearest', inline: 'end' })`);
+  await wait(250);
+  if (!(await ev(`(() => { const r = document.querySelector('#rail-nav .nav-item:last-of-type').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth + 1; })()`))) throw new Error('390px 下最后一个菜单不可达');
+  await ev(`document.querySelector('#rail-nav .nav-item:last-of-type').click()`);
+  await wait(900);
+  if (!(await ev(`location.hash === '#/supplies'`))) throw new Error('移动端最后菜单无法打开');
+  for (const action of ['password', 'logout']) {
+    await ev(`document.querySelector('[data-action="${action}"]').scrollIntoView({ block: 'nearest', inline: 'end' })`);
+    await wait(180);
+    if (!(await ev(`(() => { const el = document.querySelector('[data-action="${action}"]'); const r = el.getBoundingClientRect(); return getComputedStyle(el).display !== 'none' && r.left >= 0 && r.right <= innerWidth + 1; })()`))) throw new Error(`移动端 ${action} 入口不可达`);
+  }
+  await ev(`document.querySelector('[data-action="password"]').click()`);
+  await wait(250);
+  if (!(await ev(`Boolean(document.querySelector('input[name="current"]'))`))) throw new Error('移动端无法打开修改密码');
+  await ev(`document.querySelector('[data-action="modal-close"]').click()`);
+  await ev(`document.querySelector('[data-action="logout"]').click()`);
+  await waitFor(async () => await ev(`Boolean(document.querySelector('#login-form'))`), 5000, '移动端退出登录');
+
+  await ev(`(() => { const f = document.querySelector('#login-form'); f.username.value = 'zhangwei'; f.password.value = 'pm123456'; f.requestSubmit(); return true; })()`);
+  await waitFor(async () => await ev(`Boolean(document.querySelector('#rail-nav'))`), 5000, '乙方项目经理登录');
+  await send('Page.navigate', { url: `${BASE}/?smoke=11#/deliverables` });
+  await wait(1000);
+  await ev(`document.querySelector('[data-action="dlv-next"]').click()`);
+  await waitFor(async () => await ev(`Boolean(document.querySelector('[data-action="dlv-edit"]'))`), 5000, '乙方项目经理周报填写入口');
+  await ev(`document.querySelector('[data-action="dlv-edit"]').click()`);
+  await waitFor(async () => await ev(`Boolean(document.querySelector('#ef-markdown'))`), 5000, '乙方项目经理周报编辑器');
+  await ev(`(() => {
+    const field = document.querySelector('#ef-markdown');
+    field.value += '\\n\\n乙方项目经理录入权限回归';
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-action="editor-save"]').click();
+    return true;
+  })()`);
+  await waitFor(async () => (await ev(`document.querySelector('#save-status')?.textContent || ''`)).includes('已保存'), 5000, '乙方项目经理保存周报');
+
+  await send('Page.navigate', { url: `${BASE}/?smoke=12#/deliverables` });
+  await wait(1000);
+  await ev(`document.querySelector('[data-action="dlv-kind"][data-value="plan"]').click()`);
+  await wait(500);
+  await ev(`document.querySelector('[data-action="dlv-next"]').click()`);
+  await waitFor(async () => await ev(`Boolean(document.querySelector('[data-action="dlv-edit"]'))`), 5000, '乙方项目经理计划填写入口');
+  await ev(`document.querySelector('[data-action="dlv-edit"]').click()`);
+  await waitFor(async () => await ev(`Boolean(document.querySelector('#ef-objective'))`), 5000, '乙方项目经理计划编辑器');
+  await ev(`(() => {
+    const field = document.querySelector('#ef-objective');
+    field.value += '\\n乙方项目经理录入权限回归';
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-action="editor-save"]').click();
+    return true;
+  })()`);
+  await waitFor(async () => (await ev(`document.querySelector('#save-status')?.textContent || ''`)).includes('已保存'), 5000, '乙方项目经理保存计划');
+
   if (errors.length) throw new Error(`页面报错：${errors.slice(0, 3).join(' | ')}`);
-  console.log(`UI smoke OK: nav=${navCount}, plan/overview/value/KB/weekly-MD/meeting/supplies/help/AI/admin/global-AI pages rendered`);
+  console.log(`UI smoke OK: nav=${navCount}, editor concurrency/failure, plan cache/race, escaping, mobile 390px and all main pages rendered`);
 }
 
 try {
